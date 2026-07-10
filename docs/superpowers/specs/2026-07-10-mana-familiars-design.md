@@ -6,24 +6,22 @@
 
 Two original pixel-art companions living on the pill, modeled on the Codex desktop pet's behavior (floating overlay, draggable from anywhere, state-driven animation, persistent position — all already true of mana's window):
 
-- **Clawd** (Claude) — coral pixel crab, homage to Anthropic's crab mascot, left end of the pill.
+- **Clawd** (Claude) — Anthropic's Claude mascot: a wide flat clay-orange box with two square black eyes, side arm stubs, and four stubby legs. Left end of the pill.
 - **Nimbus** (Codex) — blue cloud-robot with a terminal visor, right end. Homage in original pixels; no OpenAI asset is copied.
 
-## Animation states (priority: carried > hover > working > low > idle)
+## Animation states (priority: hover > working > idle; hover also plays while the window is being dragged)
 
 | State | Trigger | Clawd | Nimbus |
 |---|---|---|---|
-| idle | default | claw pinches, occasional blink | bob, visor blink |
-| working | provider's CLI actively running | claws type furiously + spark | visor cursor types, antenna pings |
-| hover | pointer over the widget | claws raised, little hop | excited leg kicks |
-| carried | window is being moved (`onMoved` events; clears 300ms after last move) | claws tucked, legs wiggle | legs dangle |
-| low | session mana < 30% | droopy eye stalks, dimmed shell | droopy/sleepy visor |
+| idle | default | bob + blink, square eyes | bob + blink, console `>_` visor |
+| working | provider's CLI actively running | `> <` eyes, fast jiggle | `> <` squint, antenna ping, chest cursor blinks |
+| hover | pointer over the widget OR window being dragged (`onMoved`; clears 300ms after last move) | `^ ^` eyes, arms up, hop | happy face, leg kicks |
 
 `prefers-reduced-motion: reduce` ⇒ static first frame of the active state.
 
 ## Art pipeline
 
-- 16×16 px frames, 4 frames per state, two sprite sheets (`clawd.png`, `nimbus.png`, PNG-32 transparent) generated deterministically by `scripts/gen-sprites.py` (stdlib-only): hand-authored base pixel maps + programmatic state derivations (palette shifts, row shifts, particle overlays).
+- 16×16 px frames, 4 frames per state, 3 state rows (idle/working/hover) → 64×48 sheets (`clawd.png`, `nimbus.png`, PNG-32 transparent) generated deterministically by `scripts/gen-sprites.py` (stdlib-only): hand-authored base pixel maps + programmatic state derivations (palette shifts, row shifts, particle overlays).
 - Rendered at 2× (32×32) with `image-rendering: pixelated`; animated via CSS `steps(4)` over `background-position`.
 - **Art checkpoint:** the generator also emits `sprites-preview.png` (8× grid of every frame); the user approves it before the sprites are wired into the UI.
 
