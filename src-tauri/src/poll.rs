@@ -94,8 +94,11 @@ pub fn spawn_pollers(app: tauri::AppHandle) {
     for provider in ["claude", "codex"] {
         let app = app.clone();
         tauri::async_runtime::spawn(async move {
-            let client = reqwest::Client::new();
-            let ua = creds::claude_ua();
+            let client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(30))
+                .build()
+                .expect("reqwest client");
+            let ua = if provider == "claude" { creds::claude_ua() } else { String::new() };
             let mut tick = tokio::time::interval(std::time::Duration::from_secs(60));
             loop {
                 tick.tick().await;
