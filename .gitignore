@@ -1,0 +1,4 @@
+.claude/active-task.md
+node_modules/
+target/
+dist/
