@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
-import { fmtAge, fmtCountdown, manaLeft } from "./format";
+import { fmtAge, fmtCountdown, manaLeft, planLabel } from "./format";
 
 type Bar = {
   id: string;
@@ -80,7 +80,7 @@ function applyData(pill: HTMLElement, card: HTMLElement, s: Snapshot): void {
     });
   }
   const plan = card.querySelector<HTMLElement>(".plan");
-  if (plan) plan.textContent = s.plan ?? "";
+  if (plan) plan.textContent = planLabel(s.plan);
   const age = card.querySelector<HTMLElement>(".age");
   if (age) age.dataset.age = s.status === "stale" ? String(s.fetched_at) : "";
 }

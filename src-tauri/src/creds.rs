@@ -6,6 +6,21 @@ pub struct CodexCreds {
     pub account_id: String,
 }
 
+pub struct ClaudeCreds {
+    pub token: String,
+    pub plan: Option<String>,
+}
+
+pub fn parse_claude_creds(v: &serde_json::Value) -> Option<ClaudeCreds> {
+    Some(ClaudeCreds {
+        token: v.pointer("/claudeAiOauth/accessToken")?.as_str()?.to_string(),
+        plan: v
+            .pointer("/claudeAiOauth/subscriptionType")
+            .and_then(|p| p.as_str())
+            .map(String::from),
+    })
+}
+
 /// $CODEX_HOME/auth.json, default ~/.codex/auth.json
 pub fn codex_auth_path() -> PathBuf {
     std::env::var("CODEX_HOME")
@@ -34,8 +49,8 @@ pub fn parse_version(s: &str) -> Option<String> {
         .map(str::to_string)
 }
 
-/// Read-only Keychain lookup of Claude Code's OAuth access token.
-pub fn read_claude_token() -> Option<String> {
+/// Read-only Keychain lookup of Claude Code's OAuth credential record.
+pub fn read_claude_creds() -> Option<ClaudeCreds> {
     let out = Command::new("/usr/bin/security")
         .args(["find-generic-password", "-s", "Claude Code-credentials", "-w"])
         .output()
@@ -43,8 +58,7 @@ pub fn read_claude_token() -> Option<String> {
     if !out.status.success() {
         return None;
     }
-    let v: serde_json::Value = serde_json::from_slice(&out.stdout).ok()?;
-    Some(v.pointer("/claudeAiOauth/accessToken")?.as_str()?.to_string())
+    parse_claude_creds(&serde_json::from_slice(&out.stdout).ok()?)
 }
 
 /// UA the Claude usage endpoint requires; real CLI version when available.
@@ -92,5 +106,26 @@ mod tests {
         assert_eq!(parse_version("2.1.34 (Claude Code)"), Some("2.1.34".into()));
         assert_eq!(parse_version("claude v2.2.0"), None);
         assert_eq!(parse_version("garbage"), None);
+    }
+
+    #[test]
+    fn claude_creds_with_plan() {
+        let v: serde_json::Value = serde_json::from_str(
+            r#"{"claudeAiOauth": {"accessToken": "AT-1", "refreshToken": "RT-DO-NOT-TOUCH", "subscriptionType": "max"}}"#,
+        )
+        .unwrap();
+        let c = parse_claude_creds(&v).unwrap();
+        assert_eq!(c.token, "AT-1");
+        assert_eq!(c.plan.as_deref(), Some("max"));
+    }
+
+    #[test]
+    fn claude_creds_without_plan_or_token() {
+        let v: serde_json::Value =
+            serde_json::from_str(r#"{"claudeAiOauth": {"accessToken": "AT-1"}}"#).unwrap();
+        let c = parse_claude_creds(&v).unwrap();
+        assert_eq!(c.plan, None);
+        let empty: serde_json::Value = serde_json::from_str(r#"{}"#).unwrap();
+        assert!(parse_claude_creds(&empty).is_none());
     }
 }

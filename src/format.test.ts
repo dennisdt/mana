@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fmtAge, fmtCountdown, manaLeft } from "./format";
+import { fmtAge, fmtCountdown, manaLeft, planLabel } from "./format";
 
 describe("manaLeft", () => {
   it("inverts used into remaining", () => {
@@ -37,5 +37,18 @@ describe("fmtAge", () => {
   });
   it("minutes", () => {
     expect(fmtAge(1_783_712_399 - 190, now)).toBe("3m ago");
+  });
+});
+
+describe("planLabel", () => {
+  it("maps known identifiers", () => {
+    expect(planLabel("prolite")).toBe("Pro Lite");
+    expect(planLabel("max")).toBe("Max");
+    expect(planLabel("plus")).toBe("Plus");
+    expect(planLabel("pro")).toBe("Pro");
+  });
+  it("falls back verbatim and handles null", () => {
+    expect(planLabel("team_supreme")).toBe("team_supreme");
+    expect(planLabel(null)).toBe("");
   });
 });

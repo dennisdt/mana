@@ -47,10 +47,10 @@ pub fn fold_snapshot(
 }
 
 async fn fetch_claude(client: &reqwest::Client, ua: &str) -> FetchResult {
-    let token = creds::read_claude_token()?;
+    let creds = creds::read_claude_creds()?;
     let v: serde_json::Value = client
         .get("https://api.anthropic.com/api/oauth/usage")
-        .bearer_auth(token)
+        .bearer_auth(creds.token)
         .header("anthropic-beta", "oauth-2025-04-20")
         .header("User-Agent", ua)
         .send()
@@ -62,7 +62,7 @@ async fn fetch_claude(client: &reqwest::Client, ua: &str) -> FetchResult {
         .await
         .ok()?;
     let bars = parsers::parse_claude(&v);
-    (!bars.is_empty()).then_some((bars, None))
+    (!bars.is_empty()).then_some((bars, creds.plan))
 }
 
 async fn fetch_codex(client: &reqwest::Client) -> FetchResult {

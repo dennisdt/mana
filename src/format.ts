@@ -17,3 +17,18 @@ export function fmtAge(fetchedAt: number, nowMs: number): string {
   const m = Math.floor((nowMs / 1000 - fetchedAt) / 60);
   return m <= 0 ? "just now" : `${m}m ago`;
 }
+
+const PLAN_LABELS: Record<string, string> = {
+  prolite: "Pro Lite",
+  plus: "Plus",
+  pro: "Pro",
+  max: "Max",
+  free: "Free",
+  team: "Team",
+  enterprise: "Enterprise",
+};
+
+export function planLabel(plan: string | null): string {
+  if (!plan) return "";
+  return PLAN_LABELS[plan.toLowerCase()] ?? plan;
+}
