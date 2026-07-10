@@ -36,7 +36,7 @@ pub fn parse_version(s: &str) -> Option<String> {
 
 /// Read-only Keychain lookup of Claude Code's OAuth access token.
 pub fn read_claude_token() -> Option<String> {
-    let out = Command::new("security")
+    let out = Command::new("/usr/bin/security")
         .args(["find-generic-password", "-s", "Claude Code-credentials", "-w"])
         .output()
         .ok()?;
