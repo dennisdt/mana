@@ -39,7 +39,7 @@ body {
 
 /* ---- collapsed pill ---- */
 #pill {
-  flex: 0 0 44px;
+  flex: 0 0 48px;
   display: flex;
   align-items: center;
   padding: 0 12px;
@@ -173,6 +173,37 @@ body.expanded #card {
 .row .val b {
   color: var(--ink);
   font-weight: 600;
+}
+
+/* ---- familiars ---- */
+.sprite {
+  flex: 0 0 32px;
+  height: 32px;
+  image-rendering: pixelated;
+  background-repeat: no-repeat;
+  background-size: 128px 96px;
+  animation: sprite-run 0.9s steps(4) infinite;
+}
+.sprite.clawd {
+  background-image: url("/sprites/clawd.png");
+  filter: drop-shadow(0 0 6px rgba(217, 119, 87, 0.45));
+}
+.sprite.nimbus {
+  background-image: url("/sprites/nimbus.png");
+  filter: drop-shadow(0 0 6px rgba(126, 240, 255, 0.35));
+}
+.sprite[data-state="idle"]    { background-position-y: 0; }
+.sprite[data-state="working"] { background-position-y: -32px; animation-duration: 0.5s; }
+.sprite[data-state="hover"]   { background-position-y: -64px; animation-duration: 0.6s; }
+
+@keyframes sprite-run {
+  from { background-position-x: 0; }
+  to   { background-position-x: -128px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sprite { animation: none; }
+  .low .fill { animation: none; }
 }
 
 /* ---- data states ---- */

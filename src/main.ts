@@ -17,8 +17,8 @@ type Snapshot = {
   fetched_at: number;
 };
 
-const COLLAPSED = new LogicalSize(280, 44);
-const EXPANDED = new LogicalSize(300, 248);
+const COLLAPSED = new LogicalSize(340, 48);
+const EXPANDED = new LogicalSize(340, 248);
 const GEMS: Record<string, string> = { claude: "◆", codex: "●" };
 
 const snapshots = new Map<string, Snapshot>();
