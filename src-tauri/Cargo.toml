@@ -21,4 +21,11 @@ reqwest = { version = "0.12", features = ["json"] }
 tokio = { version = "1", features = ["time"] }
 tauri-plugin-window-state = "2"
 tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", rev = "a3122e894383aa068ec5365a42994e3ac94ba1b6" }
-window-vibrancy = "0.7.1"
+window-vibrancy = "0.6"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true

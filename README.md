@@ -1,0 +1,34 @@
+# mana
+
+Gamer mana bars for your AI subscriptions. A tiny always-on-top macOS widget
+showing how much Claude Code and Codex usage you have left — 5-hour window,
+weekly, and Claude's model-scoped (Fable) weekly limit — as depleting mana
+bars with reset countdowns. Hover to expand the full readout.
+
+## How it reads usage
+
+- **Claude Code**: `GET https://api.anthropic.com/api/oauth/usage` using the
+  OAuth token Claude Code stores in the macOS Keychain
+  (`Claude Code-credentials`), read via `/usr/bin/security`.
+- **Codex**: `GET https://chatgpt.com/backend-api/wham/usage` using the token
+  in `~/.codex/auth.json` (`$CODEX_HOME` respected).
+
+Both are read-only: mana re-reads credentials fresh on every 60s poll and
+**never refreshes or writes tokens**, so it cannot break your CLI logins.
+If a token has expired (401), bars dim to a "stale" state until you next use
+the CLI. Both endpoints are undocumented — expect occasional breakage.
+
+## Build
+
+    npm install
+    npm run tauri build
+    cp -R src-tauri/target/release/bundle/macos/mana.app /Applications/
+
+First run: macOS Keychain will ask about `security` reading
+"Claude Code-credentials" — choose **Always Allow**.
+
+## Dev
+
+    npm run tauri dev   # live widget
+    npm test            # frontend unit tests
+    cd src-tauri && cargo test   # Rust unit tests
