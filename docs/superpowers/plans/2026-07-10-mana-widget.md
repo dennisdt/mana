@@ -1786,3 +1786,11 @@ With `/Applications/mana.app` running: re-run the Task 7 checklist, then let it 
 git add -A
 git commit -m "feat: release profile, README, shipped v0.1.0"
 ```
+
+---
+
+## Addenda (2026-07-10, during execution)
+
+- **window-vibrancy pinned to "0.6"** (not 0.7.1): tauri 2.x internally depends on window-vibrancy ^0.6; two copies define the same ObjC class symbol (`__CLASS_NSVisualEffectViewTagged`) and fat LTO fails the link. Pinning to "0.6" unifies to one copy. `apply_vibrancy` signature identical.
+- **Task 9 (user-requested): plan chips** — show subscription plan next to both provider names in the card head. Claude: `subscriptionType` from the same Keychain blob already read for the token (verified "max" on this machine). Codex: existing `plan_type`. Both prettified via `planLabel()` map (prolite → "Pro Lite", max → "Max", …, unknown → verbatim). Brief: `.superpowers/sdd/task-9-brief.md`.
+- **Liquid Glass evaluated and deferred**: window-vibrancy 0.7.x `apply_liquid_glass` exists but upstream #208 (non-key non-activating panels render permanently foggy; no force-active API) and #198 (corner artifacts) break it for this widget. Revisit when PR #199 lands.
