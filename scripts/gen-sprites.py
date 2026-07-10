@@ -1,19 +1,18 @@
 """Generate mana familiar sprite sheets. Stdlib only, deterministic.
 
-Sheet layout per character: 5 rows (idle, working, hover, carried, low)
-x 4 frames of 16x16 px -> 64x80 RGBA PNG.
+Sheet layout per character: 3 rows (idle, working, hover)
+x 4 frames of 16x16 px -> 64x48 RGBA PNG.
 """
 import struct, zlib
 
 SIZE = 16
-STATES = ["idle", "working", "hover", "carried", "low"]
+STATES = ["idle", "working", "hover"]
 
 CLAWD_PALETTE = {
-    "D": (140, 47, 27, 255),   # dark rust outline
-    "R": (217, 119, 87, 255),  # coral shell (anthropic clay)
-    "O": (240, 154, 111, 255), # light coral
-    "W": (255, 248, 239, 255), # eye white / sparkle
-    "K": (51, 21, 15, 255),    # pupil / mouth
+    "D": (160, 75, 46, 255),   # dark rust (dimmed marks)
+    "R": (217, 119, 87, 255),  # clay orange body
+    "K": (40, 20, 14, 255),    # face/chevron marks
+    "W": (255, 248, 239, 255), # sparkle
 }
 
 NIMBUS_PALETTE = {
@@ -29,39 +28,39 @@ NIMBUS_PALETTE = {
 CLAWD_BASE = [
     "................",
     "................",
-    "....WW....WW....",
-    "....WK....KW....",
-    ".....R....R.....",
-    "..RR.RRRRRR.RR..",
-    ".RROROOOOOORORR.",
-    "RRO.ROOOOOOR.ORR",
-    "RR..ROOOOOOR..RR",
-    "....ROOKKOOR....",
-    "....RROOOORR....",
-    ".....RRRRRR.....",
-    "....R.R..R.R....",
-    "...D..D..D..D...",
     "................",
+    "..RRRRRRRRRRRR..",
+    "..RRRRRRRRRRRR..",
+    "RRRRKKRRRRKKRRRR",
+    "RRRRKKRRRRKKRRRR",
+    "..RRRRRRRRRRRR..",
+    "..RRRRRRRRRRRR..",
+    "..RRRRRRRRRRRR..",
+    "..RRRRRRRRRRRR..",
+    "..RRRRRRRRRRRR..",
+    "..RR.RR..RR.RR..",
+    "..RR.RR..RR.RR..",
+    "..RR.RR..RR.RR..",
     "................",
 ]
 
 NIMBUS_BASE = [
     "................",
-    ".....BBB.BB.....",
-    "...BBLLLBLLB....",
-    "..BLLWLLLLLLB...",
-    ".BLLLLLLLLLLLB..",
-    ".BLLLLLLLLLLLB..",
-    "..BNNNNNNNNNB...",
-    "..NVCVVVVVVVN...",
-    "..NVVCVCCVVVN...",
-    "..NVCVVVVVVVN...",
-    "..BNNNNNNNNNB...",
-    "...BLLLLLLLB....",
-    "...BLCLLLCLB....",
-    "....BLLLLLB.....",
-    "....BGB.BGB.....",
-    "....NGN.NGN.....",
+    ".....BBBB.......",
+    "...BBLWLLBB.....",
+    "..BLLLLLLLLB....",
+    ".BLLLLLLLLLLB...",
+    ".BLLNNNNNNNNLB..",
+    "BLLLNCVVVVVNLLLB",
+    "BLLLNVCVCCVNLLLB",
+    "BLLLNCVVVVVNLLLB",
+    ".BLLNNNNNNNNLB..",
+    "..BLLLLLLLLLLB..",
+    "....BLLLLLLB....",
+    "..BBLCLCCLLBB...",
+    "....BLLLLLLB....",
+    "....BGB..BGB....",
+    "....NGN..NGN....",
 ]
 
 
@@ -132,63 +131,74 @@ def shift_region(grid, rows, cols, dx=0, dy=0):
 
 def clawd_frames():
     base = CLAWD_BASE
-    claw_rows = list(range(5, 9))
-    left, right = list(range(0, 5)), list(range(11, 16))
 
-    blink = remap(base, {"W": "R", "K": "R"}, rows=[2, 3])
-    pinch = shift_region(base, claw_rows, left, dy=-1)
-    idle = [base, pinch, base, blink]
+    def eyes(rows_map):
+        out = list(base)
+        for r, row in rows_map.items():
+            out[r] = row
+        return out
 
-    up_l = shift_region(base, claw_rows, left, dy=-1)
-    up_r = shift_region(base, claw_rows, right, dy=-1)
-    working = [
-        overlay(up_l, [(1, 8)], "W"),
-        up_r,
-        overlay(up_l, [(1, 6)], "W"),
-        up_r,
-    ]
+    blink = eyes({5: "RRRRRRRRRRRRRRRR"})
+    focus = eyes({
+        5: "RRRRKRRRRRRKRRRR",
+        6: "RRRRRKRRRRKRRRRR",
+        7: "..RRKRRRRRRKRR..",
+    })
+    happy = eyes({
+        5: "RRRRKRRRRRRKRRRR",
+        6: "RRRKRKRRRRKRKRRR",
+    })
 
-    both_up = shift_region(shift_region(base, claw_rows, left, dy=-2), claw_rows, right, dy=-2)
-    hop = shift_rows(both_up, [2, 3, 4], dy=-1)
-    hover = [both_up, hop, both_up, base]
+    bob = shift_rows(base, list(range(3, 15)), dy=1)
+    idle = [base, base, bob, blink]
 
-    tuck = shift_region(shift_region(base, claw_rows, left, dx=1), claw_rows, right, dx=-1)
-    carried = [tuck, shift_rows(base, [12, 13], dx=1), tuck, shift_rows(base, [12, 13], dx=-1)]
+    focus_bob = shift_rows(focus, list(range(3, 15)), dy=1)
+    working = [focus, focus_bob, focus, focus_bob]
 
-    droop = shift_rows(base, [2, 3, 4], dy=1)
-    dim = remap(droop, {"O": "R"})
-    sleepy = remap(dim, {"W": "R"}, rows=[3])
-    low = [dim, dim, sleepy, dim]
+    arms_up = shift_region(happy, [5, 6], [0, 1, 14, 15], dy=-1)
+    hop = shift_rows(arms_up, list(range(3, 15)), dy=-1)
+    hover = [arms_up, hop, arms_up, happy]
 
-    return [idle, working, hover, carried, low]
+    return [idle, working, hover]
 
 
 def nimbus_frames():
     base = NIMBUS_BASE
-    visor = list(range(7, 10))
+    visor = [6, 7, 8]
+
+    def face(rows_map):
+        out = list(base)
+        for r, row in rows_map.items():
+            out[r] = row
+        return out
+
+    squint = face({
+        6: "BLLLNCVVVVCNLLLB",
+        7: "BLLLNVCVVCVNLLLB",
+        8: "BLLLNCVVVVCNLLLB",
+    })
+    happy = face({
+        6: "BLLLNVCVVCVNLLLB",
+        7: "BLLLNCVCCVCNLLLB",
+        8: "BLLLNVVVVVVNLLLB",
+    })
+
     bob = shift_rows(base, list(range(0, 14)), dy=1)
     blink = remap(base, {"C": "V"}, rows=visor)
     idle = [base, base, bob, blink]
 
-    cursor = [
-        base,
-        overlay(base, [(8, 10)], "C"),
-        overlay(base, [(8, 10), (8, 11)], "C"),
-        remap(base, {"C": "V"}, rows=[8]),
+    working = [
+        overlay(squint, [(0, 7)], "C"),
+        overlay(squint, [(12, 9)], "C"),
+        overlay(squint, [(0, 7)], "C"),
+        squint,
     ]
-    working = [overlay(f, [(0, 7)], "C") if i % 2 == 0 else f for i, f in enumerate(cursor)]
 
-    kick_l = shift_rows(base, [14, 15], dx=-1)
-    kick_r = shift_rows(base, [14, 15], dx=1)
-    hover = [kick_l, base, kick_r, base]
+    kick_l = shift_rows(happy, [14, 15], dx=-1)
+    kick_r = shift_rows(happy, [14, 15], dx=1)
+    hover = [kick_l, happy, kick_r, happy]
 
-    squash = shift_rows(base, [1, 2, 3, 4, 5], dy=1)
-    carried = [squash, base, squash, base]
-
-    droop = shift_rows(remap(base, {"C": "G"}), [1, 2, 3], dy=1)
-    low = [droop, droop, remap(droop, {"G": "V"}, rows=visor), droop]
-
-    return [idle, working, hover, carried, low]
+    return [idle, working, hover]
 
 
 def build_sheet(frames_by_state, palette):
