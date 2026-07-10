@@ -1,29 +1,29 @@
 # mana v1.1 — Familiars (pet sprites) design
 
-2026-07-10 · approved by Dennis (layout: companions flank the pill; characters: flame familiar + cloud-bot; activity: local process check)
+2026-07-10 · approved by Dennis (layout: companions flank the pill; characters: Clawd crab + cloud-bot (amended same day: user chose brand mascots for both); activity: local process check)
 
 ## What
 
 Two original pixel-art companions living on the pill, modeled on the Codex desktop pet's behavior (floating overlay, draggable from anywhere, state-driven animation, persistent position — all already true of mana's window):
 
-- **Cinder** (Claude) — coral/amber flame-spark familiar, left end of the pill.
+- **Clawd** (Claude) — coral pixel crab, homage to Anthropic's crab mascot, left end of the pill.
 - **Nimbus** (Codex) — blue cloud-robot with a terminal visor, right end. Homage in original pixels; no OpenAI asset is copied.
 
 ## Animation states (priority: carried > hover > working > low > idle)
 
-| State | Trigger | Cinder | Nimbus |
+| State | Trigger | Clawd | Nimbus |
 |---|---|---|---|
-| idle | default | soft flicker + bob, occasional blink | bob, visor blink |
-| working | provider's CLI actively running | blaze + rising embers | visor cursor types, antenna pings |
-| hover | pointer over the widget | flare + sparkles | excited leg kicks |
-| carried | window is being moved (`onMoved` events; clears 300ms after last move) | flame streams sideways | legs dangle |
-| low | session mana < 30% | gutters to embers | droopy/sleepy visor |
+| idle | default | claw pinches, occasional blink | bob, visor blink |
+| working | provider's CLI actively running | claws type furiously + spark | visor cursor types, antenna pings |
+| hover | pointer over the widget | claws raised, little hop | excited leg kicks |
+| carried | window is being moved (`onMoved` events; clears 300ms after last move) | claws tucked, legs wiggle | legs dangle |
+| low | session mana < 30% | droopy eye stalks, dimmed shell | droopy/sleepy visor |
 
 `prefers-reduced-motion: reduce` ⇒ static first frame of the active state.
 
 ## Art pipeline
 
-- 16×16 px frames, 4 frames per state, two sprite sheets (`cinder.png`, `nimbus.png`, PNG-32 transparent) generated deterministically by `scripts/gen-sprites.py` (stdlib-only): hand-authored base pixel maps + programmatic state derivations (palette shifts, row shifts, particle overlays).
+- 16×16 px frames, 4 frames per state, two sprite sheets (`clawd.png`, `nimbus.png`, PNG-32 transparent) generated deterministically by `scripts/gen-sprites.py` (stdlib-only): hand-authored base pixel maps + programmatic state derivations (palette shifts, row shifts, particle overlays).
 - Rendered at 2× (32×32) with `image-rendering: pixelated`; animated via CSS `steps(4)` over `background-position`.
 - **Art checkpoint:** the generator also emits `sprites-preview.png` (8× grid of every frame); the user approves it before the sprites are wired into the UI.
 
