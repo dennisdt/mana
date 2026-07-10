@@ -1,3 +1,4 @@
+pub mod activity;
 pub mod creds;
 pub mod parsers;
 pub mod poll;
@@ -86,6 +87,7 @@ pub fn run() {
                 .build(app)?;
 
             poll::spawn_pollers(app.handle().clone());
+            activity::spawn_activity_watcher(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![poll::get_snapshots])

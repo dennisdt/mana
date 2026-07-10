@@ -23,6 +23,23 @@ const GEMS: Record<string, string> = { claude: "◆", codex: "●" };
 
 const snapshots = new Map<string, Snapshot>();
 
+const activity: Record<string, boolean> = { claude: false, codex: false };
+let hovering = false;
+let moving = false;
+
+function spriteState(provider: string): string {
+  if (moving || hovering) return "hover";
+  if (activity[provider]) return "working";
+  return "idle";
+}
+
+function updateSprites(): void {
+  for (const provider of ["claude", "codex"]) {
+    const el = document.getElementById(`sprite-${provider}`);
+    if (el) el.dataset.state = spriteState(provider);
+  }
+}
+
 function esc(s: string): string {
   return s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 }
@@ -104,6 +121,7 @@ function renderProvider(provider: string): void {
   card.classList.toggle("stale", stale === true);
   if (s && key !== "absent") applyData(pill, card, s);
   tick();
+  updateSprites();
 }
 
 function tick(): void {
@@ -136,6 +154,12 @@ document.body.addEventListener("mouseleave", () => setExpanded(false));
 void listen<Snapshot>("usage-update", (e) => {
   snapshots.set(e.payload.provider, e.payload);
   renderProvider(e.payload.provider);
+});
+
+void listen<Record<string, boolean>>("activity", (e) => {
+  activity.claude = e.payload.claude ?? false;
+  activity.codex = e.payload.codex ?? false;
+  updateSprites();
 });
 
 void invoke<Snapshot[]>("get_snapshots").then((all) => {
