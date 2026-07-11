@@ -1,7 +1,7 @@
 use std::process::Command;
 use tauri::Emitter;
 
-fn is_running(name: &str) -> bool {
+pub fn is_running(name: &str) -> bool {
     Command::new("/usr/bin/pgrep")
         .args(["-x", name])
         .output()
@@ -25,4 +25,9 @@ pub fn spawn_activity_watcher(app: tauri::AppHandle) {
             }
         }
     });
+}
+
+#[tauri::command]
+pub fn get_activity() -> serde_json::Value {
+    serde_json::json!({ "claude": is_running("claude"), "codex": is_running("codex") })
 }

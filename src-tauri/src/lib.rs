@@ -90,7 +90,7 @@ pub fn run() {
             activity::spawn_activity_watcher(app.handle().clone());
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![poll::get_snapshots])
+        .invoke_handler(tauri::generate_handler![poll::get_snapshots, activity::get_activity])
         .run(tauri::generate_context!())
         .expect("error while running mana");
 }

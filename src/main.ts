@@ -16,6 +16,7 @@ type Snapshot = {
   status: string;
   fetched_at: number;
 };
+type Activity = { claude: boolean; codex: boolean };
 
 const COLLAPSED = new LogicalSize(340, 48);
 const EXPANDED = new LogicalSize(340, 248);
@@ -156,7 +157,7 @@ void listen<Snapshot>("usage-update", (e) => {
   renderProvider(e.payload.provider);
 });
 
-void listen<Record<string, boolean>>("activity", (e) => {
+void listen<Activity>("activity", (e) => {
   activity.claude = e.payload.claude ?? false;
   activity.codex = e.payload.codex ?? false;
   updateSprites();
@@ -165,6 +166,12 @@ void listen<Record<string, boolean>>("activity", (e) => {
 void invoke<Snapshot[]>("get_snapshots").then((all) => {
   for (const s of all) snapshots.set(s.provider, s);
   for (const provider of ["claude", "codex"]) renderProvider(provider);
+});
+
+void invoke<Activity>("get_activity").then((a) => {
+  activity.claude = a.claude ?? false;
+  activity.codex = a.codex ?? false;
+  updateSprites();
 });
 
 for (const provider of ["claude", "codex"]) renderProvider(provider);
