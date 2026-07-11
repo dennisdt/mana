@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="/src/styles.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>mana</title>
+    <script type="module" src="/src/main.ts" defer></script>
+  </head>
+  <body>
+    <div id="root" data-tauri-drag-region="deep">
+      <div id="pill">
+        <div class="sprite clawd" id="sprite-claude" data-state="idle"></div>
+        <div class="slot" id="pill-claude"></div>
+        <div class="split"></div>
+        <div class="slot" id="pill-codex"></div>
+        <div class="sprite nimbus" id="sprite-codex" data-state="idle"></div>
+      </div>
+      <div id="card">
+        <section id="card-claude"></section>
+        <section id="card-codex"></section>
+      </div>
+    </div>
+  </body>
+</html>
