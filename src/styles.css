@@ -214,3 +214,19 @@ body.expanded #card {
   font-size: 10px;
   color: var(--ink-dim);
 }
+
+.track {
+  position: relative;
+}
+.track::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: repeating-linear-gradient(
+    90deg,
+    transparent 0 9px,
+    rgba(10, 12, 24, 0.5) 9px 10px
+  );
+  pointer-events: none;
+}

@@ -28,6 +28,13 @@ describe("fmtCountdown", () => {
   it("unknown", () => {
     expect(fmtCountdown(null, now)).toBe("");
   });
+  it("beyond 24h shows weekday + local time", () => {
+    const out = fmtCountdown(1_783_712_399 + 94 * 3600, now);
+    expect(out).toMatch(/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d{1,2}:\d{2} (AM|PM)$/);
+  });
+  it("exactly at 24h boundary still relative", () => {
+    expect(fmtCountdown(1_783_712_399 + 24 * 3600, now)).toBe("24h 0m");
+  });
 });
 
 describe("fmtAge", () => {

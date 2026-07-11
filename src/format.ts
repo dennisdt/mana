@@ -6,6 +6,12 @@ export function fmtCountdown(resetsAt: number | null, nowMs: number): string {
   if (resetsAt == null) return "";
   const s = Math.round(resetsAt - nowMs / 1000);
   if (s <= 0) return "now";
+  if (s > 86400) {
+    const d = new Date(resetsAt * 1000);
+    return d
+      .toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" })
+      .replace(",", "");
+  }
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
   if (h > 0) return `${h}h ${m}m`;

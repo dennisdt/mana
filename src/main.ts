@@ -138,12 +138,15 @@ function tick(): void {
 
 let sizing: Promise<void> = Promise.resolve();
 function setExpanded(on: boolean): void {
+  hovering = on;
   sizing = sizing.then(async () => {
     if (on) {
       await getCurrentWindow().setSize(EXPANDED);
       document.body.classList.add("expanded");
+      updateSprites();
     } else {
       document.body.classList.remove("expanded");
+      updateSprites();
       await getCurrentWindow().setSize(COLLAPSED);
     }
   });
@@ -151,6 +154,17 @@ function setExpanded(on: boolean): void {
 
 document.body.addEventListener("mouseenter", () => setExpanded(true));
 document.body.addEventListener("mouseleave", () => setExpanded(false));
+
+let moveTimer: ReturnType<typeof setTimeout> | undefined;
+void getCurrentWindow().onMoved(() => {
+  moving = true;
+  updateSprites();
+  clearTimeout(moveTimer);
+  moveTimer = setTimeout(() => {
+    moving = false;
+    updateSprites();
+  }, 300);
+});
 
 void listen<Snapshot>("usage-update", (e) => {
   snapshots.set(e.payload.provider, e.payload);
