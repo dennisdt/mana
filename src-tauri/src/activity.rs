@@ -2,15 +2,12 @@ use std::collections::HashMap;
 use std::process::Command;
 use tauri::Emitter;
 
-/// True if `line` (a `comm args` string, comm then full args separated by a
-/// space) is an interactive `name` CLI process: comm is `name` or ends in
-/// `/name`, and the args do not mark it as a resident server/helper
-/// (Codex.app's app-server).
-pub fn line_matches(line: &str, name: &str) -> bool {
-    let line = line.trim_start();
-    let mut parts = line.splitn(2, ' ');
-    let comm = parts.next().unwrap_or("");
-    let args = parts.next().unwrap_or("");
+/// True if the (`comm`, `args`) pair describes an interactive `name` CLI
+/// process: comm is `name` or ends in `/name`, and the args do not mark it
+/// as a resident server/helper (Codex.app's app-server). Takes the pair
+/// directly — joining comm+args into one string and re-splitting on space
+/// would misparse a comm path that itself contains a space.
+pub fn proc_matches(comm: &str, args: &str, name: &str) -> bool {
     (comm == name || comm.ends_with(&format!("/{name}")))
         && !args.contains("app-server")
         && !comm.contains(".app/")
@@ -24,7 +21,7 @@ pub fn line_matches(line: &str, name: &str) -> bool {
 /// 16 chars) even when the `=` (no-header) modifier is used and even when
 /// output isn't a tty. A single `-axo comm=,args=` call therefore mangles
 /// long executable paths (e.g. Codex.app's or Homebrew's), which breaks the
-/// `.app/` / suffix matching in `line_matches`. Keeping `field` last in each
+/// `.app/` / suffix matching in `proc_matches`. Keeping `field` last in each
 /// call avoids the truncation.
 fn ps_field(field: &str) -> HashMap<String, String> {
     let out = match Command::new("/bin/ps")
@@ -50,7 +47,7 @@ pub fn is_running(name: &str) -> bool {
     let empty = String::new();
     comms.iter().any(|(pid, comm)| {
         let a = args.get(pid).unwrap_or(&empty);
-        line_matches(&format!("{comm} {a}"), name)
+        proc_matches(comm, a, name)
     })
 }
 
@@ -79,20 +76,22 @@ pub fn get_activity() -> serde_json::Value {
 
 #[cfg(test)]
 mod tests {
-    use super::line_matches;
+    use super::proc_matches;
 
     #[test]
     fn matches_cli_invocations() {
-        assert!(line_matches("/opt/homebrew/Caskroom/codex/0.144.0/codex-aarch64-apple-darwin/codex codex", "codex"));
-        assert!(line_matches("codex codex exec \"fix bug\"", "codex"));
-        assert!(line_matches("/usr/local/bin/claude claude --resume", "claude"));
+        assert!(proc_matches("/opt/homebrew/Caskroom/codex/0.144.0/codex-aarch64-apple-darwin/codex", "codex", "codex"));
+        assert!(proc_matches("codex", "codex exec \"fix bug\"", "codex"));
+        assert!(proc_matches("/usr/local/bin/claude", "claude --resume", "claude"));
+        // comm path containing a space must not be misparsed
+        assert!(proc_matches("/Users/John Smith/.cargo/bin/codex", "codex", "codex"));
     }
 
     #[test]
     fn excludes_servers_and_gui_bundles() {
-        assert!(!line_matches("/Applications/Codex.app/Contents/Resources/codex codex -c features.code_mode_ho", "codex"));
-        assert!(!line_matches("/opt/homebrew/bin/codex codex -s read-only app-server", "codex"));
-        assert!(!line_matches("/Applications/Claude.app/Contents/MacOS/Claude Claude", "claude"));
-        assert!(!line_matches("random line", "codex"));
+        assert!(!proc_matches("/Applications/Codex.app/Contents/Resources/codex", "codex -c features.code_mode_ho", "codex"));
+        assert!(!proc_matches("/opt/homebrew/bin/codex", "codex -s read-only app-server", "codex"));
+        assert!(!proc_matches("/Applications/Claude.app/Contents/MacOS/Claude", "Claude", "claude"));
+        assert!(!proc_matches("random", "line", "codex"));
     }
 }
