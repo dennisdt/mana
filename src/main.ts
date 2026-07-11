@@ -109,7 +109,7 @@ function renderProvider(provider: string): void {
   const card = document.getElementById(`card-${provider}`)!;
   const key =
     s && s.status !== "absent" && s.bars.length > 0
-      ? s.bars.map((b) => b.id).join(",")
+      ? s.bars.map((b) => `${b.id}:${b.label}`).join(",")
       : "absent";
   if (pill.dataset.key !== key) {
     pill.dataset.key = key;
@@ -140,15 +140,18 @@ let sizing: Promise<void> = Promise.resolve();
 function setExpanded(on: boolean): void {
   hovering = on;
   sizing = sizing.then(async () => {
+    const win = getCurrentWindow();
+    const pos = await win.outerPosition();
     if (on) {
-      await getCurrentWindow().setSize(EXPANDED);
+      await win.setSize(EXPANDED);
+      await win.setPosition(pos);
       document.body.classList.add("expanded");
-      updateSprites();
     } else {
       document.body.classList.remove("expanded");
-      updateSprites();
-      await getCurrentWindow().setSize(COLLAPSED);
+      await win.setSize(COLLAPSED);
+      await win.setPosition(pos);
     }
+    updateSprites();
   });
 }
 
