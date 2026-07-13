@@ -6,32 +6,22 @@ import {
   LogicalSize,
   PhysicalPosition,
 } from "@tauri-apps/api/window";
-import { fmtAge, fmtCompactCountdown, fmtCountdown, manaLeft, planLabel } from "./format";
-import { cardHtml, pillHtml, type Snapshot } from "./view";
+import { fmtAge, fmtCountdown, manaLeft, planLabel } from "./format";
+import { cardHtml, type Snapshot } from "./view";
 import {
-  COLLAPSED_HEIGHT,
-  COLLAPSED_WIDTH,
-  collapsedOriginFromExpanded,
-  createHoverIntent,
-  createLayoutIntent,
+  ROSTER_WIDTH,
   createSerialQueue,
-  expandedHeight,
-  expandedOrigin,
-  EXPANDED_WIDTH,
+  rosterHeight,
+  rosterOrigin,
 } from "./window-layout";
 
 type Activity = { claude: boolean; codex: boolean };
-
-const COLLAPSED = new LogicalSize(COLLAPSED_WIDTH, COLLAPSED_HEIGHT);
 
 const snapshots = new Map<string, Snapshot>();
 
 const activity: Record<string, boolean> = { claude: false, codex: false };
 let hovering = false;
 let moving = false;
-const layoutIntent = createLayoutIntent(false);
-let collapsedOrigin: PhysicalPosition | undefined;
-let expandedOffsetX = 0;
 
 function spriteState(provider: string): string {
   if (moving || hovering) return "hover";
@@ -52,23 +42,21 @@ function updateSprites(): void {
   }
 }
 
-function applyData(pill: HTMLElement, card: HTMLElement, s: Snapshot): void {
-  for (const root of [pill, card]) {
-    s.bars.forEach((b, i) => {
-      const left = manaLeft(b.used_percent);
-      root.querySelectorAll<HTMLElement>(`.track[data-bar="${i}"]`).forEach((track) => {
-        track.classList.toggle("low", left < 30);
-        const fill = track.querySelector<HTMLElement>(".fill");
-        if (fill) fill.style.width = `${left}%`;
-      });
-      root.querySelectorAll<HTMLElement>(`.pct[data-bar="${i}"]`).forEach((el) => {
-        el.textContent = `${Math.round(left)}%`;
-      });
-      root.querySelectorAll<HTMLElement>(`.cd[data-bar="${i}"]`).forEach((el) => {
-        el.dataset.resets = b.resets_at == null ? "" : String(b.resets_at);
-      });
+function applyData(card: HTMLElement, s: Snapshot): void {
+  s.bars.forEach((b, i) => {
+    const left = manaLeft(b.used_percent);
+    card.querySelectorAll<HTMLElement>(`.track[data-bar="${i}"]`).forEach((track) => {
+      track.classList.toggle("low", left < 30);
+      const fill = track.querySelector<HTMLElement>(".fill");
+      if (fill) fill.style.width = `${left}%`;
     });
-  }
+    card.querySelectorAll<HTMLElement>(`.pct[data-bar="${i}"]`).forEach((el) => {
+      el.textContent = `${Math.round(left)}%`;
+    });
+    card.querySelectorAll<HTMLElement>(`.cd[data-bar="${i}"]`).forEach((el) => {
+      el.dataset.resets = b.resets_at == null ? "" : String(b.resets_at);
+    });
+  });
   const plan = card.querySelector<HTMLElement>(".plan");
   if (plan) plan.textContent = planLabel(s.plan);
   const age = card.querySelector<HTMLElement>(".age");
@@ -77,36 +65,28 @@ function applyData(pill: HTMLElement, card: HTMLElement, s: Snapshot): void {
 
 function renderProvider(provider: string): void {
   const s = snapshots.get(provider);
-  const pill = document.getElementById(`pill-${provider}`)!;
   const card = document.getElementById(`card-${provider}`)!;
   const key =
     s && s.status !== "absent" && s.bars.length > 0
       ? s.bars.map((b) => `${b.id}:${b.label}`).join(",")
       : "absent";
-  if (pill.dataset.key !== key) {
-    pill.dataset.key = key;
+  if (card.dataset.key !== key) {
     card.dataset.key = key;
-    pill.innerHTML = pillHtml(s, provider);
     card.innerHTML = cardHtml(s, provider);
   }
   const stale = s?.status === "stale";
-  pill.classList.toggle("stale", stale === true);
   card.classList.toggle("stale", stale === true);
-  document
-    .querySelector<HTMLElement>(`#pill .sprite[data-provider="${provider}"]`)
-    ?.classList.toggle("stale", stale === true);
-  if (s && key !== "absent") applyData(pill, card, s);
+  if (s && key !== "absent") applyData(card, s);
   tick();
   updateSprites();
-  resizeExpandedContent();
+  resizeRosterContent();
 }
 
 function tick(): void {
   const now = Date.now();
   document.querySelectorAll<HTMLElement>(".cd").forEach((el) => {
     const t = Number(el.dataset.resets);
-    const formatter = el.closest("#pill") ? fmtCompactCountdown : fmtCountdown;
-    el.textContent = el.dataset.resets && t > 0 ? ` · ${formatter(t, now)}` : "";
+    el.textContent = el.dataset.resets && t > 0 ? ` · ${fmtCountdown(t, now)}` : "";
   });
   document.querySelectorAll<HTMLElement>(".age").forEach((el) => {
     el.textContent = el.dataset.age ? fmtAge(Number(el.dataset.age), now) : "";
@@ -117,94 +97,39 @@ const enqueueSizing = createSerialQueue((error) => {
   console.error("[mana] window sizing failed", error);
 });
 
-function nextLayoutFrame(): Promise<void> {
-  return new Promise((resolve) => requestAnimationFrame(() => resolve()));
-}
-
-function resizeExpandedContent(): void {
-  if (!layoutIntent.expanded) return;
+function resizeRosterContent(): void {
   void enqueueSizing(async () => {
-    if (!layoutIntent.expanded) return;
     const card = document.getElementById("card")!;
+    const height = rosterHeight(card.scrollHeight);
     const win = getCurrentWindow();
     const position = await win.outerPosition();
-    await win.setSize(
-      new LogicalSize(EXPANDED_WIDTH, expandedHeight(card.scrollHeight)),
-    );
-    await win.setPosition(position);
+    const monitor = await currentMonitor();
+    const target = monitor
+      ? rosterOrigin(
+          position,
+          { width: ROSTER_WIDTH, height },
+          {
+            x: monitor.workArea.position.x,
+            y: monitor.workArea.position.y,
+            width: monitor.workArea.size.width,
+            height: monitor.workArea.size.height,
+          },
+          monitor.scaleFactor,
+        )
+      : position;
+    await win.setSize(new LogicalSize(ROSTER_WIDTH, height));
+    await win.setPosition(new PhysicalPosition(target.x, target.y));
   });
 }
 
-function setExpanded(on: boolean): void {
-  const request = layoutIntent.request(on);
-  void enqueueSizing(async () => {
-    if (layoutIntent.expanded !== on) return;
-    if (on && document.body.classList.contains("expanded")) return;
-    const win = getCurrentWindow();
-    if (on) {
-      try {
-        const origin = await win.outerPosition();
-        const monitor = await currentMonitor();
-        const target = monitor
-          ? expandedOrigin(origin, {
-              x: monitor.workArea.position.x,
-              y: monitor.workArea.position.y,
-              width: monitor.workArea.size.width,
-              height: monitor.workArea.size.height,
-            }, monitor.scaleFactor)
-          : origin;
-        collapsedOrigin = origin;
-        expandedOffsetX = target.x - origin.x;
-        document.body.classList.add("expanded");
-        await win.setSize(new LogicalSize(EXPANDED_WIDTH, COLLAPSED_HEIGHT));
-        await win.setPosition(new PhysicalPosition(target.x, target.y));
-        await nextLayoutFrame();
-        if (layoutIntent.expanded !== on) return;
-        const card = document.getElementById("card")!;
-        await win.setSize(new LogicalSize(EXPANDED_WIDTH, expandedHeight(card.scrollHeight)));
-        await win.setPosition(new PhysicalPosition(target.x, target.y));
-      } catch (error) {
-        layoutIntent.resetIfCurrent(request, false);
-        document.body.classList.remove("expanded");
-        await win.setSize(COLLAPSED).catch(() => undefined);
-        if (collapsedOrigin) await win.setPosition(collapsedOrigin).catch(() => undefined);
-        collapsedOrigin = undefined;
-        expandedOffsetX = 0;
-        throw error;
-      }
-    } else {
-      let restoreOrigin = collapsedOrigin;
-      if (restoreOrigin) {
-        try {
-          const position = await win.outerPosition();
-          const restored = collapsedOriginFromExpanded(position, expandedOffsetX);
-          restoreOrigin = new PhysicalPosition(restored.x, restored.y);
-        } catch (error) {
-          console.error("[mana] could not capture expanded position", error);
-        }
-      }
-      document.body.classList.remove("expanded");
-      try {
-        await win.setSize(COLLAPSED);
-        if (restoreOrigin) await win.setPosition(restoreOrigin);
-      } finally {
-        collapsedOrigin = undefined;
-        expandedOffsetX = 0;
-      }
-    }
-  });
-}
-
-const hoverIntent = createHoverIntent(
-  (value) => {
-    hovering = value;
-    updateSprites();
-  },
-  setExpanded,
-  () => moving,
-);
-document.body.addEventListener("mouseenter", hoverIntent.enter);
-document.body.addEventListener("mouseleave", hoverIntent.leave);
+document.body.addEventListener("mouseenter", () => {
+  hovering = true;
+  updateSprites();
+});
+document.body.addEventListener("mouseleave", () => {
+  hovering = false;
+  updateSprites();
+});
 
 let moveTimer: ReturnType<typeof setTimeout> | undefined;
 void getCurrentWindow().onMoved(() => {
@@ -214,7 +139,6 @@ void getCurrentWindow().onMoved(() => {
   moveTimer = setTimeout(() => {
     moving = false;
     updateSprites();
-    hoverIntent.movementSettled();
   }, 300);
 });
 

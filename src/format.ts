@@ -19,14 +19,6 @@ export function fmtCountdown(resetsAt: number | null, nowMs: number): string {
   return "<1m";
 }
 
-export function fmtCompactCountdown(resetsAt: number | null, nowMs: number): string {
-  return fmtCountdown(resetsAt, nowMs).replace(
-    / (\d{1,2}):\d{2} (AM|PM)$/,
-    (_match, hour: string, dayPeriod: string) =>
-      ` ${hour}${dayPeriod === "AM" ? "a" : "p"}`,
-  );
-}
-
 export function fmtAge(fetchedAt: number, nowMs: number): string {
   const m = Math.floor((nowMs / 1000 - fetchedAt) / 60);
   return m <= 0 ? "just now" : `${m}m ago`;

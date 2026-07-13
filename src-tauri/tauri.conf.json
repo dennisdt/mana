@@ -15,8 +15,8 @@
       {
         "label": "main",
         "title": "mana",
-        "width": 340,
-        "height": 48,
+        "width": 420,
+        "height": 175,
         "transparent": true,
         "decorations": false,
         "shadow": false,

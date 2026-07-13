@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fmtAge, fmtCompactCountdown, fmtCountdown, manaLeft, planLabel } from "./format";
+import { fmtAge, fmtCountdown, manaLeft, planLabel } from "./format";
 
 describe("manaLeft", () => {
   it("inverts used into remaining", () => {
@@ -34,28 +34,6 @@ describe("fmtCountdown", () => {
   });
   it("exactly at 24h boundary still relative", () => {
     expect(fmtCountdown(1_783_712_399 + 24 * 3600, now)).toBe("24h 0m");
-  });
-});
-
-describe("fmtCompactCountdown", () => {
-  const now = 1_783_712_399_000;
-
-  it("shortens but preserves the day period for multi-day reset times", () => {
-    const out = fmtCompactCountdown(1_783_712_399 + 94 * 3600, now);
-    expect(out).toMatch(/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d{1,2}[ap]$/);
-  });
-
-  it("keeps matching morning and evening hours unambiguous", () => {
-    const morning = new Date(2030, 0, 7, 1).getTime() / 1000;
-    const evening = new Date(2030, 0, 7, 13).getTime() / 1000;
-    const twoDaysEarlier = (morning - 2 * 86400) * 1000;
-
-    expect(fmtCompactCountdown(morning, twoDaysEarlier)).toMatch(/1a$/);
-    expect(fmtCompactCountdown(evening, twoDaysEarlier)).toMatch(/1p$/);
-  });
-
-  it("keeps relative countdowns unchanged", () => {
-    expect(fmtCompactCountdown(1_783_712_399 + 2 * 3600 + 14 * 60, now)).toBe("2h 14m");
   });
 });
 

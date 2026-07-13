@@ -15,8 +15,6 @@ export type Snapshot = {
   fetched_at: number;
 };
 
-const GEMS: Record<string, string> = { claude: "◆", codex: "●" };
-
 function esc(value: string): string {
   return value.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`);
 }
@@ -29,17 +27,6 @@ function spriteHtml(provider: string): string {
 function barHtml(snapshot: Snapshot, bar: Bar, index: number): string {
   const left = manaLeft(bar.used_percent);
   return `<div class="track ${snapshot.provider}${left < 30 ? " low" : ""}" data-bar="${index}"><div class="fill" style="width:${left}%"></div></div>`;
-}
-
-export function pillHtml(snapshot: Snapshot | undefined, provider: string): string {
-  if (!snapshot || snapshot.status === "absent" || snapshot.bars.length === 0) {
-    return `<span class="gem">${GEMS[provider]}</span><span class="nums">no data</span>`;
-  }
-  const sessionIndex = snapshot.bars.findIndex((bar) => bar.id === "session");
-  const index = sessionIndex >= 0 ? sessionIndex : 0;
-  return `<span class="gem ${snapshot.provider}">${GEMS[provider]}</span>
-    ${barHtml(snapshot, snapshot.bars[index], index)}
-    <span class="nums"><b class="pct" data-bar="${index}"></b><span class="cd" data-bar="${index}"></span></span>`;
 }
 
 export function cardHtml(snapshot: Snapshot | undefined, provider: string): string {

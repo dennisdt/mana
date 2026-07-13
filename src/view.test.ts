@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { cardHtml, pillHtml, type Snapshot } from "./view";
+import indexMarkup from "../index.html?raw";
+import { cardHtml } from "./view";
 
-const weeklyOnly: Snapshot = {
+const weeklyOnly = {
   provider: "codex",
   plan: "pro",
   status: "ok",
@@ -15,6 +16,8 @@ describe("cardHtml", () => {
     expect(html).toContain('class="sprite nimbus"');
     expect(html).toContain('data-provider="codex"');
     expect(html).toContain('class="lbl">Weekly</span>');
+    expect(html).toContain('class="track codex"');
+    expect(html).not.toContain('class="slot"');
     expect(html).not.toContain("5 hour");
   });
 
@@ -31,8 +34,7 @@ describe("cardHtml", () => {
   });
 });
 
-describe("pillHtml", () => {
-  it("uses the first available bar when no session bar exists", () => {
-    expect(pillHtml(weeklyOnly, "codex")).toContain('data-bar="0"');
-  });
+it("mounts the roster without a compact pill", () => {
+  expect(indexMarkup).toContain('id="card"');
+  expect(indexMarkup).not.toContain('id="pill"');
 });

@@ -72,63 +72,9 @@ body {
   background: linear-gradient(90deg, transparent, rgba(237, 243, 255, 0.72), transparent);
 }
 
-#pill,
 #card {
   position: relative;
   z-index: 1;
-}
-
-/* Collapsed roster */
-#pill {
-  display: grid;
-  grid-template-columns: 32px minmax(0, 1fr) 1px minmax(0, 1fr) 32px;
-  flex: 0 0 46px;
-  align-items: center;
-  box-sizing: border-box;
-  height: 46px;
-  padding: 0 8px;
-  gap: 4px;
-}
-
-#pill .split {
-  width: 1px;
-  height: 24px;
-  background: linear-gradient(transparent, rgba(168, 181, 204, 0.32), transparent);
-}
-
-.slot {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-}
-
-.slot .gem {
-  display: none;
-}
-
-.slot .track {
-  flex: 1 1 18px;
-  min-width: 18px;
-}
-
-.slot .nums {
-  flex: 0 0 auto;
-  color: var(--ink-dim);
-  line-height: 1;
-  white-space: nowrap;
-}
-
-.slot .nums b {
-  color: var(--ink);
-  font-size: 12px;
-  font-weight: 650;
-}
-
-body.expanded #pill {
-  display: none;
 }
 
 /* Mana tracks */
@@ -197,18 +143,14 @@ body.expanded #pill {
   }
 }
 
-/* Expanded party roster */
+/* Party roster */
 #card {
-  display: none;
+  display: flex;
   flex-direction: column;
   box-sizing: border-box;
   width: 100%;
   min-width: 0;
   padding: 14px 16px;
-}
-
-body.expanded #card {
-  display: flex;
 }
 
 #card section {

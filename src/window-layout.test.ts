@@ -1,37 +1,45 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
-  COLLAPSE_DELAY_MS,
-  collapsedOriginFromExpanded,
-  createHoverIntent,
-  createLayoutIntent,
+  INITIAL_ROSTER_HEIGHT,
+  ROSTER_WIDTH,
   createSerialQueue,
-  expandedHeight,
-  expandedOrigin,
+  rosterHeight,
+  rosterOrigin,
 } from "./window-layout";
 
-afterEach(() => vi.useRealTimers());
-
-describe("expandedOrigin", () => {
-  it("keeps an origin that fits the active work area", () => {
-    expect(expandedOrigin({ x: 500, y: 80 }, { x: 0, y: 0, width: 2880, height: 1800 }, 2))
-      .toEqual({ x: 500, y: 80 });
+describe("permanent roster geometry", () => {
+  it("uses the expanded roster from startup", () => {
+    expect({ width: ROSTER_WIDTH, height: INITIAL_ROSTER_HEIGHT }).toEqual({
+      width: 420,
+      height: 175,
+    });
   });
 
-  it("shifts left only enough to keep 420 logical pixels visible", () => {
-    expect(expandedOrigin({ x: 2100, y: 80 }, { x: 0, y: 0, width: 2880, height: 1800 }, 2))
-      .toEqual({ x: 2040, y: 80 });
+  it("keeps an origin that fits the active work area", () => {
+    expect(
+      rosterOrigin(
+        { x: 500, y: 80 },
+        { width: 420, height: 175 },
+        { x: 0, y: 0, width: 2880, height: 1800 },
+        2,
+      ),
+    ).toEqual({ x: 500, y: 80 });
+  });
+
+  it("clamps both axes for a saved compact position near the edge", () => {
+    expect(
+      rosterOrigin(
+        { x: 2300, y: 1700 },
+        { width: 420, height: 210 },
+        { x: 0, y: 0, width: 2880, height: 1800 },
+        2,
+      ),
+    ).toEqual({ x: 2040, y: 1380 });
   });
 });
 
 it("rounds measured card height plus the root border", () => {
-  expect(expandedHeight(207.2)).toBe(210);
-});
-
-it("recovers the collapsed origin from a shifted expanded window", () => {
-  expect(collapsedOriginFromExpanded({ x: 1_000, y: 80 }, -60)).toEqual({
-    x: 1_060,
-    y: 80,
-  });
+  expect(rosterHeight(207.2)).toBe(210);
 });
 
 it("serializes work and continues after a rejected operation", async () => {
@@ -58,73 +66,4 @@ it("serializes work and continues after a rejected operation", async () => {
 
   expect(events).toEqual(["first:start", "first:end", "second"]);
   expect(errors).toHaveLength(1);
-});
-
-it("keeps re-entry newer than a failing expansion request", () => {
-  const intent = createLayoutIntent(false);
-  const firstEnter = intent.request(true);
-  const latestEnter = intent.request(true);
-
-  expect(intent.resetIfCurrent(firstEnter, false)).toBe(false);
-  expect(intent.expanded).toBe(true);
-  expect(intent.isCurrent(firstEnter)).toBe(false);
-  expect(intent.isCurrent(latestEnter)).toBe(true);
-});
-
-it("delays collapse and cancels it on re-entry", () => {
-  vi.useFakeTimers();
-  const hoverStates: boolean[] = [];
-  const expandedStates: boolean[] = [];
-  const intent = createHoverIntent(
-    (value) => hoverStates.push(value),
-    (value) => expandedStates.push(value),
-  );
-  intent.enter();
-  intent.leave();
-  vi.advanceTimersByTime(COLLAPSE_DELAY_MS - 1);
-  expect(expandedStates).toEqual([true]);
-  intent.enter();
-  vi.advanceTimersByTime(COLLAPSE_DELAY_MS);
-  expect(hoverStates).toEqual([true, false, true]);
-  expect(expandedStates).toEqual([true, true]);
-});
-
-it("defers collapse until movement settles", () => {
-  vi.useFakeTimers();
-  let moving = true;
-  const expandedStates: boolean[] = [];
-  const intent = createHoverIntent(
-    () => undefined,
-    (value) => expandedStates.push(value),
-    () => moving,
-  );
-
-  intent.enter();
-  intent.leave();
-  vi.advanceTimersByTime(COLLAPSE_DELAY_MS);
-  expect(expandedStates).toEqual([true]);
-
-  moving = false;
-  intent.movementSettled();
-  expect(expandedStates).toEqual([true, false]);
-});
-
-it("cancels a movement-deferred collapse on re-entry", () => {
-  vi.useFakeTimers();
-  let moving = true;
-  const expandedStates: boolean[] = [];
-  const intent = createHoverIntent(
-    () => undefined,
-    (value) => expandedStates.push(value),
-    () => moving,
-  );
-
-  intent.enter();
-  intent.leave();
-  vi.advanceTimersByTime(COLLAPSE_DELAY_MS);
-  intent.enter();
-  moving = false;
-  intent.movementSettled();
-
-  expect(expandedStates).toEqual([true, true]);
 });
