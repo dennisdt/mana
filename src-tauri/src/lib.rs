@@ -45,7 +45,7 @@ pub fn run() {
                 &window,
                 NSVisualEffectMaterial::HudWindow,
                 Some(NSVisualEffectState::Active),
-                Some(14.0),
+                Some(8.0),
             )?;
 
             // Non-activating floating panel: hovers over every window and
