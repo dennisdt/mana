@@ -6,7 +6,7 @@ import {
   LogicalSize,
   PhysicalPosition,
 } from "@tauri-apps/api/window";
-import { fmtAge, fmtCountdown, manaLeft, planLabel } from "./format";
+import { fmtAge, fmtCompactCountdown, fmtCountdown, manaLeft, planLabel } from "./format";
 import { cardHtml, pillHtml, type Snapshot } from "./view";
 import {
   COLLAPSED_HEIGHT,
@@ -41,6 +41,9 @@ function spriteState(provider: string): string {
 
 function updateSprites(): void {
   for (const provider of ["claude", "codex"]) {
+    document
+      .getElementById(`card-${provider}`)
+      ?.toggleAttribute("data-working", activity[provider] === true);
     document
       .querySelectorAll<HTMLElement>(`.sprite[data-provider="${provider}"]`)
       .forEach((element) => {
@@ -89,6 +92,9 @@ function renderProvider(provider: string): void {
   const stale = s?.status === "stale";
   pill.classList.toggle("stale", stale === true);
   card.classList.toggle("stale", stale === true);
+  document
+    .querySelector<HTMLElement>(`#pill .sprite[data-provider="${provider}"]`)
+    ?.classList.toggle("stale", stale === true);
   if (s && key !== "absent") applyData(pill, card, s);
   tick();
   updateSprites();
@@ -99,7 +105,8 @@ function tick(): void {
   const now = Date.now();
   document.querySelectorAll<HTMLElement>(".cd").forEach((el) => {
     const t = Number(el.dataset.resets);
-    el.textContent = el.dataset.resets && t > 0 ? ` · ${fmtCountdown(t, now)}` : "";
+    const formatter = el.closest("#pill") ? fmtCompactCountdown : fmtCountdown;
+    el.textContent = el.dataset.resets && t > 0 ? ` · ${formatter(t, now)}` : "";
   });
   document.querySelectorAll<HTMLElement>(".age").forEach((el) => {
     el.textContent = el.dataset.age ? fmtAge(Number(el.dataset.age), now) : "";
