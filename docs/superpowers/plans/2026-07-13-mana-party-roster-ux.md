@@ -137,6 +137,7 @@ Run:
 
 ```bash
 cd src-tauri
+rustfmt --edition 2021 src/parsers.rs
 cargo test parsers::tests
 cargo test
 ```
@@ -601,7 +602,7 @@ Run:
 npm test
 npm run build
 cd src-tauri
-cargo fmt --check
+rustfmt --edition 2021 --check src/parsers.rs
 cargo test
 cargo check
 ```
@@ -662,5 +663,5 @@ git commit -m "feat: ship the glass party roster HUD"
 
 - [ ] Review the complete diff against `docs/superpowers/specs/2026-07-13-mana-party-roster-ux-design.md`.
 - [ ] Confirm no unrelated files, `.DS_Store`, temporary screenshots, or `.superpowers` artifacts are staged.
-- [ ] Re-run `npm test`, `npm run build`, `cargo fmt --check`, `cargo test`, and `cargo check` after all review fixes.
+- [ ] Re-run `npm test`, `npm run build`, `rustfmt --edition 2021 --check src/parsers.rs`, `cargo test`, and `cargo check` after all review fixes. Full-repo `cargo fmt --check` has pre-existing failures outside this change and is not a release gate for v0.3.0.
 - [ ] Confirm the installed `/Applications/mana.app` reports and renders v0.3.0 behavior.
