@@ -13,7 +13,7 @@ import {
   COLLAPSED_WIDTH,
   collapsedOriginFromExpanded,
   createHoverIntent,
-  createRequestRevision,
+  createLayoutIntent,
   createSerialQueue,
   expandedHeight,
   expandedOrigin,
@@ -29,7 +29,7 @@ const snapshots = new Map<string, Snapshot>();
 const activity: Record<string, boolean> = { claude: false, codex: false };
 let hovering = false;
 let moving = false;
-let expanded = false;
+const layoutIntent = createLayoutIntent(false);
 let collapsedOrigin: PhysicalPosition | undefined;
 let expandedOffsetX = 0;
 
@@ -109,16 +109,15 @@ function tick(): void {
 const enqueueSizing = createSerialQueue((error) => {
   console.error("[mana] window sizing failed", error);
 });
-const requestRevision = createRequestRevision();
 
 function nextLayoutFrame(): Promise<void> {
   return new Promise((resolve) => requestAnimationFrame(() => resolve()));
 }
 
 function resizeExpandedContent(): void {
-  if (!expanded) return;
+  if (!layoutIntent.expanded) return;
   void enqueueSizing(async () => {
-    if (!expanded) return;
+    if (!layoutIntent.expanded) return;
     const card = document.getElementById("card")!;
     const win = getCurrentWindow();
     const position = await win.outerPosition();
@@ -130,11 +129,9 @@ function resizeExpandedContent(): void {
 }
 
 function setExpanded(on: boolean): void {
-  if (expanded === on) return;
-  expanded = on;
-  const revision = requestRevision.issue();
+  const request = layoutIntent.request(on);
   void enqueueSizing(async () => {
-    if (expanded !== on) return;
+    if (layoutIntent.expanded !== on) return;
     if (on && document.body.classList.contains("expanded")) return;
     const win = getCurrentWindow();
     if (on) {
@@ -155,12 +152,12 @@ function setExpanded(on: boolean): void {
         await win.setSize(new LogicalSize(EXPANDED_WIDTH, COLLAPSED_HEIGHT));
         await win.setPosition(new PhysicalPosition(target.x, target.y));
         await nextLayoutFrame();
-        if (expanded !== on) return;
+        if (layoutIntent.expanded !== on) return;
         const card = document.getElementById("card")!;
         await win.setSize(new LogicalSize(EXPANDED_WIDTH, expandedHeight(card.scrollHeight)));
         await win.setPosition(new PhysicalPosition(target.x, target.y));
       } catch (error) {
-        if (requestRevision.isCurrent(revision) && expanded === on) expanded = false;
+        layoutIntent.resetIfCurrent(request, false);
         document.body.classList.remove("expanded");
         await win.setSize(COLLAPSED).catch(() => undefined);
         if (collapsedOrigin) await win.setPosition(collapsedOrigin).catch(() => undefined);

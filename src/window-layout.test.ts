@@ -3,7 +3,7 @@ import {
   COLLAPSE_DELAY_MS,
   collapsedOriginFromExpanded,
   createHoverIntent,
-  createRequestRevision,
+  createLayoutIntent,
   createSerialQueue,
   expandedHeight,
   expandedOrigin,
@@ -60,13 +60,15 @@ it("serializes work and continues after a rejected operation", async () => {
   expect(errors).toHaveLength(1);
 });
 
-it("distinguishes an older request from the latest intent", () => {
-  const revisions = createRequestRevision();
-  const first = revisions.issue();
-  const latest = revisions.issue();
+it("keeps re-entry newer than a failing expansion request", () => {
+  const intent = createLayoutIntent(false);
+  const firstEnter = intent.request(true);
+  const latestEnter = intent.request(true);
 
-  expect(revisions.isCurrent(first)).toBe(false);
-  expect(revisions.isCurrent(latest)).toBe(true);
+  expect(intent.resetIfCurrent(firstEnter, false)).toBe(false);
+  expect(intent.expanded).toBe(true);
+  expect(intent.isCurrent(firstEnter)).toBe(false);
+  expect(intent.isCurrent(latestEnter)).toBe(true);
 });
 
 it("delays collapse and cancels it on re-entry", () => {

@@ -32,15 +32,31 @@ export function createSerialQueue(onError: (error: unknown) => void) {
   };
 }
 
-export function createRequestRevision() {
-  let current = 0;
+export type LayoutRequest = { expanded: boolean; revision: number };
+
+export function createLayoutIntent(initialExpanded: boolean) {
+  let expanded = initialExpanded;
+  let revision = 0;
+
+  function isCurrent(request: LayoutRequest): boolean {
+    return request.revision === revision && request.expanded === expanded;
+  }
+
   return {
-    issue(): number {
-      current += 1;
-      return current;
+    get expanded(): boolean {
+      return expanded;
     },
-    isCurrent(revision: number): boolean {
-      return revision === current;
+    request(nextExpanded: boolean): LayoutRequest {
+      expanded = nextExpanded;
+      revision += 1;
+      return { expanded: nextExpanded, revision };
+    },
+    isCurrent,
+    resetIfCurrent(request: LayoutRequest, nextExpanded: boolean): boolean {
+      if (!isCurrent(request)) return false;
+      expanded = nextExpanded;
+      revision += 1;
+      return true;
     },
   };
 }
