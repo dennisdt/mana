@@ -17,6 +17,7 @@ describe("cardHtml", () => {
     expect(html).toContain('data-provider="codex"');
     expect(html).toContain('class="lbl">Weekly</span>');
     expect(html).toContain('class="track codex"');
+    expect(html).toContain('class="fill" style="width:55px"');
     expect(html).not.toContain('class="slot"');
     expect(html).not.toContain("5 hour");
   });

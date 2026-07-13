@@ -80,35 +80,47 @@ body {
 /* Mana tracks */
 .track {
   position: relative;
-  min-width: 0;
-  height: 7px;
-  overflow: hidden;
-  border-radius: 4px;
-  background: rgba(237, 243, 255, 0.1);
-  box-shadow:
-    inset 0 1px 2px rgba(0, 0, 0, 0.48),
-    0 0 0 1px rgba(237, 243, 255, 0.04);
+  width: 128px;
+  min-width: 128px;
+  height: 16px;
+  overflow: visible;
+  background: transparent;
 }
 
+.track::before,
 .track::after {
   position: absolute;
-  inset: 0;
-  z-index: 2;
-  border-radius: inherit;
-  background: repeating-linear-gradient(
-    90deg,
-    transparent 0 9px,
-    rgba(8, 13, 26, 0.58) 9px 10px
-  );
   content: "";
   pointer-events: none;
 }
 
+.track::before {
+  inset: 5px 3px;
+  z-index: 0;
+  background: rgba(8, 13, 26, 0.72);
+}
+
+.track::after {
+  inset: 0;
+  z-index: 3;
+  background-image:
+    url("/hud/boss-bar-left.png"),
+    url("/hud/boss-bar-mid.png"),
+    url("/hud/boss-bar-mid.png"),
+    url("/hud/boss-bar-right.png");
+  background-position: 0 0, 32px 0, 64px 0, 96px 0;
+  background-repeat: no-repeat;
+  image-rendering: pixelated;
+}
+
 .fill {
-  position: relative;
-  height: 100%;
+  position: absolute;
+  top: 5px;
+  left: 3px;
+  z-index: 1;
+  height: 6px;
   overflow: hidden;
-  border-radius: inherit;
+  border-radius: 0;
   background: linear-gradient(90deg, var(--c1), var(--c2));
   box-shadow: 0 0 8px var(--glow);
   transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1);
@@ -176,8 +188,7 @@ body {
 
 .provider-content,
 .rows,
-.row,
-.row .track {
+.row {
   min-width: 0;
 }
 
@@ -238,7 +249,7 @@ body {
 
 .row {
   display: grid;
-  grid-template-columns: 52px minmax(82px, 1fr) max-content;
+  grid-template-columns: 52px 128px minmax(0, 1fr);
   align-items: center;
   gap: 8px;
   font-size: 11px;
@@ -249,10 +260,6 @@ body {
 .row .lbl {
   color: var(--ink-dim);
   white-space: nowrap;
-}
-
-.row .track {
-  height: 8px;
 }
 
 .row .val {

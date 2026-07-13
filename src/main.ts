@@ -7,6 +7,7 @@ import {
   PhysicalPosition,
 } from "@tauri-apps/api/window";
 import { fmtAge, fmtCountdown, manaLeft, planLabel } from "./format";
+import { meterFillPixels } from "./meter";
 import { cardHtml, type Snapshot } from "./view";
 import {
   ROSTER_WIDTH,
@@ -48,7 +49,7 @@ function applyData(card: HTMLElement, s: Snapshot): void {
     card.querySelectorAll<HTMLElement>(`.track[data-bar="${i}"]`).forEach((track) => {
       track.classList.toggle("low", left < 30);
       const fill = track.querySelector<HTMLElement>(".fill");
-      if (fill) fill.style.width = `${left}%`;
+      if (fill) fill.style.width = `${meterFillPixels(left)}px`;
     });
     card.querySelectorAll<HTMLElement>(`.pct[data-bar="${i}"]`).forEach((el) => {
       el.textContent = `${Math.round(left)}%`;

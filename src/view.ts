@@ -1,4 +1,5 @@
 import { manaLeft } from "./format";
+import { meterFillPixels } from "./meter";
 
 export type Bar = {
   id: string;
@@ -26,7 +27,8 @@ function spriteHtml(provider: string): string {
 
 function barHtml(snapshot: Snapshot, bar: Bar, index: number): string {
   const left = manaLeft(bar.used_percent);
-  return `<div class="track ${snapshot.provider}${left < 30 ? " low" : ""}" data-bar="${index}"><div class="fill" style="width:${left}%"></div></div>`;
+  const pixels = meterFillPixels(left);
+  return `<div class="track ${snapshot.provider}${left < 30 ? " low" : ""}" data-bar="${index}"><div class="fill" style="width:${pixels}px"></div></div>`;
 }
 
 export function cardHtml(snapshot: Snapshot | undefined, provider: string): string {
