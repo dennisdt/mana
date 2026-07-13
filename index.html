@@ -10,15 +10,15 @@
   <body>
     <div id="root" data-tauri-drag-region="deep">
       <div id="pill">
-        <div class="sprite clawd" id="sprite-claude" data-state="idle"></div>
+        <div class="sprite clawd" data-provider="claude" data-state="idle"></div>
         <div class="slot" id="pill-claude"></div>
         <div class="split"></div>
         <div class="slot" id="pill-codex"></div>
-        <div class="sprite nimbus" id="sprite-codex" data-state="idle"></div>
+        <div class="sprite nimbus" data-provider="codex" data-state="idle"></div>
       </div>
       <div id="card">
-        <section id="card-claude"></section>
-        <section id="card-codex"></section>
+        <section id="card-claude" class="provider-card claude"></section>
+        <section id="card-codex" class="provider-card codex"></section>
       </div>
     </div>
   </body>

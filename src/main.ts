@@ -2,25 +2,12 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import { fmtAge, fmtCountdown, manaLeft, planLabel } from "./format";
+import { cardHtml, pillHtml, type Snapshot } from "./view";
 
-type Bar = {
-  id: string;
-  label: string;
-  used_percent: number;
-  resets_at: number | null;
-};
-type Snapshot = {
-  provider: string;
-  bars: Bar[];
-  plan: string | null;
-  status: string;
-  fetched_at: number;
-};
 type Activity = { claude: boolean; codex: boolean };
 
 const COLLAPSED = new LogicalSize(340, 48);
 const EXPANDED = new LogicalSize(340, 248);
-const GEMS: Record<string, string> = { claude: "◆", codex: "●" };
 
 const snapshots = new Map<string, Snapshot>();
 
@@ -36,48 +23,12 @@ function spriteState(provider: string): string {
 
 function updateSprites(): void {
   for (const provider of ["claude", "codex"]) {
-    const el = document.getElementById(`sprite-${provider}`);
-    if (el) el.dataset.state = spriteState(provider);
+    document
+      .querySelectorAll<HTMLElement>(`.sprite[data-provider="${provider}"]`)
+      .forEach((element) => {
+        element.dataset.state = spriteState(provider);
+      });
   }
-}
-
-function esc(s: string): string {
-  return s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-}
-
-function barHtml(s: Snapshot, bar: Bar, idx: number): string {
-  const left = manaLeft(bar.used_percent);
-  const low = left < 30 ? " low" : "";
-  return `<div class="track ${s.provider}${low}" data-bar="${idx}"><div class="fill" style="width:${left}%"></div></div>`;
-}
-
-function pillHtml(s: Snapshot | undefined, provider: string): string {
-  if (!s || s.status === "absent" || s.bars.length === 0) {
-    return `<span class="gem">${GEMS[provider]}</span><span class="nums">no data</span>`;
-  }
-  const found = s.bars.findIndex((b) => b.id === "session");
-  const idx = found >= 0 ? found : 0;
-  const session = s.bars[idx];
-  return `<span class="gem ${s.provider}">${GEMS[provider]}</span>
-    ${barHtml(s, session, idx)}
-    <span class="nums"><b class="pct" data-bar="${idx}"></b><span class="cd" data-bar="${idx}"></span></span>`;
-}
-
-function cardHtml(s: Snapshot | undefined, provider: string): string {
-  const name = provider === "claude" ? "Claude" : "Codex";
-  if (!s || s.status === "absent" || s.bars.length === 0) {
-    return `<div class="head">${name}</div><div class="empty">no data — log in via the ${provider} CLI</div>`;
-  }
-  const rows = s.bars
-    .map(
-      (b, i) => `<div class="row">
-        <span class="lbl">${esc(b.label)}</span>
-        ${barHtml(s, b, i)}
-        <span class="val"><b class="pct" data-bar="${i}"></b><span class="cd" data-bar="${i}"></span></span>
-      </div>`,
-    )
-    .join("");
-  return `<div class="head">${name}<span class="plan"></span><span class="age"></span></div>${rows}`;
 }
 
 function applyData(pill: HTMLElement, card: HTMLElement, s: Snapshot): void {
