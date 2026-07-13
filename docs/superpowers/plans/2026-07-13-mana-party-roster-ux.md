@@ -634,20 +634,28 @@ npm run tauri build
 
 Stop the currently running mana instance, replace `/Applications/mana.app` with `src-tauri/target/release/bundle/macos/mana.app` using a reversible backup, launch the new app, and repeat the collapsed/expanded smoke check against the installed binary.
 
-Use these exact replacement commands after the release build succeeds:
+At action time, ask for permission before quitting the running installed app.
+After approval, use `cua-driver hotkey` with `cmd+q`; do not use `kill`,
+`killall`, or `pkill`. Then use these replacement commands:
 
 ```bash
-pkill -x mana || true
 backup="/tmp/mana.app.v0.2.1-backup-$(date +%s)"
 mv /Applications/mana.app "$backup"
 if ditto src-tauri/target/release/bundle/macos/mana.app /Applications/mana.app; then
-  open /Applications/mana.app
   printf 'Previous app backup: %s\n' "$backup"
 else
   mv "$backup" /Applications/mana.app
   exit 1
 fi
 ```
+
+Launch the installed build without foregrounding it:
+
+```bash
+cua-driver launch_app '{"bundle_id":"com.vantasoft.mana"}'
+```
+
+Do not use any form of the `open` command for app launch.
 
 - [ ] **Step 7: Commit the visual release**
 
