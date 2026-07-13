@@ -21,8 +21,9 @@ export function fmtCountdown(resetsAt: number | null, nowMs: number): string {
 
 export function fmtCompactCountdown(resetsAt: number | null, nowMs: number): string {
   return fmtCountdown(resetsAt, nowMs).replace(
-    / (AM|PM)$/,
-    (_match, dayPeriod: string) => (dayPeriod === "AM" ? "a" : "p"),
+    / (\d{1,2}):\d{2} (AM|PM)$/,
+    (_match, hour: string, dayPeriod: string) =>
+      ` ${hour}${dayPeriod === "AM" ? "a" : "p"}`,
   );
 }
 
