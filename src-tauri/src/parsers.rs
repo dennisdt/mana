@@ -26,7 +26,7 @@ pub fn parse_claude(v: &serde_json::Value) -> Vec<Bar> {
                 .and_then(|r| r.as_str())
                 .and_then(iso_to_epoch);
             let (id, label) = match l.get("kind").and_then(|k| k.as_str()) {
-                Some("session") => ("session", "5h".to_string()),
+                Some("session") => ("session", "5 hour".to_string()),
                 Some("weekly_all") => ("weekly", "Weekly".to_string()),
                 Some("weekly_scoped") => (
                     "model",
@@ -37,14 +37,25 @@ pub fn parse_claude(v: &serde_json::Value) -> Vec<Bar> {
                 ),
                 _ => continue,
             };
-            bars.push(Bar { id: id.into(), label, used_percent: percent, resets_at });
+            bars.push(Bar {
+                id: id.into(),
+                label,
+                used_percent: percent,
+                resets_at,
+            });
         }
     }
     if !bars.is_empty() {
         return bars;
     }
-    for (key, id, label) in [("five_hour", "session", "5h"), ("seven_day", "weekly", "Weekly")] {
-        if let Some(pct) = v.pointer(&format!("/{key}/utilization")).and_then(|u| u.as_f64()) {
+    for (key, id, label) in [
+        ("five_hour", "session", "5 hour"),
+        ("seven_day", "weekly", "Weekly"),
+    ] {
+        if let Some(pct) = v
+            .pointer(&format!("/{key}/utilization"))
+            .and_then(|u| u.as_f64())
+        {
             bars.push(Bar {
                 id: id.into(),
                 label: label.into(),
@@ -59,15 +70,25 @@ pub fn parse_claude(v: &serde_json::Value) -> Vec<Bar> {
     bars
 }
 
+fn codex_window_identity(key: &str, window: &serde_json::Value) -> (&'static str, &'static str) {
+    match window.get("limit_window_seconds").and_then(|v| v.as_i64()) {
+        Some(18_000) => ("session", "5 hour"),
+        Some(604_800) => ("weekly", "Weekly"),
+        _ if key == "primary_window" => ("primary", "Primary"),
+        _ => ("secondary", "Secondary"),
+    }
+}
+
 pub fn parse_codex(v: &serde_json::Value) -> (Vec<Bar>, Option<String>) {
-    let plan = v.get("plan_type").and_then(|p| p.as_str()).map(String::from);
+    let plan = v
+        .get("plan_type")
+        .and_then(|p| p.as_str())
+        .map(String::from);
     let mut bars = Vec::new();
-    for (key, id, label) in [
-        ("primary_window", "session", "5h"),
-        ("secondary_window", "weekly", "Weekly"),
-    ] {
+    for key in ["primary_window", "secondary_window"] {
         if let Some(w) = v.pointer(&format!("/rate_limit/{key}")) {
             if let Some(pct) = w.get("used_percent").and_then(|p| p.as_f64()) {
+                let (id, label) = codex_window_identity(key, w);
                 bars.push(Bar {
                     id: id.into(),
                     label: label.into(),
@@ -92,20 +113,26 @@ mod tests {
     fn claude_limits_array() {
         let bars = parse_claude(&load(include_str!("../tests/fixtures/claude_limits.json")));
         assert_eq!(bars.len(), 3);
-        assert_eq!(bars[0], Bar {
-            id: "session".into(),
-            label: "5h".into(),
-            used_percent: 26.0,
-            resets_at: Some(1783712399),
-        });
+        assert_eq!(
+            bars[0],
+            Bar {
+                id: "session".into(),
+                label: "5 hour".into(),
+                used_percent: 26.0,
+                resets_at: Some(1783712399),
+            }
+        );
         assert_eq!(bars[1].id, "weekly");
         assert_eq!(bars[1].used_percent, 19.0);
-        assert_eq!(bars[2], Bar {
-            id: "model".into(),
-            label: "Fable".into(),
-            used_percent: 32.0,
-            resets_at: Some(1784062799),
-        });
+        assert_eq!(
+            bars[2],
+            Bar {
+                id: "model".into(),
+                label: "Fable".into(),
+                used_percent: 32.0,
+                resets_at: Some(1784062799),
+            }
+        );
     }
 
     #[test]
@@ -128,10 +155,57 @@ mod tests {
     fn codex_windows() {
         let (bars, plan) = parse_codex(&load(include_str!("../tests/fixtures/codex_wham.json")));
         assert_eq!(plan.as_deref(), Some("prolite"));
-        assert_eq!(bars, vec![
-            Bar { id: "session".into(), label: "5h".into(), used_percent: 4.0, resets_at: Some(1783727913) },
-            Bar { id: "weekly".into(), label: "Weekly".into(), used_percent: 1.0, resets_at: Some(1784314713) },
-        ]);
+        assert_eq!(
+            bars,
+            vec![
+                Bar {
+                    id: "session".into(),
+                    label: "5 hour".into(),
+                    used_percent: 4.0,
+                    resets_at: Some(1783727913)
+                },
+                Bar {
+                    id: "weekly".into(),
+                    label: "Weekly".into(),
+                    used_percent: 1.0,
+                    resets_at: Some(1784314713)
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn codex_pro_weekly_primary() {
+        let (bars, plan) = parse_codex(&load(include_str!(
+            "../tests/fixtures/codex_pro_weekly.json"
+        )));
+        assert_eq!(plan.as_deref(), Some("pro"));
+        assert_eq!(
+            bars,
+            vec![Bar {
+                id: "weekly".into(),
+                label: "Weekly".into(),
+                used_percent: 55.0,
+                resets_at: Some(1784487600),
+            }]
+        );
+    }
+
+    #[test]
+    fn codex_unknown_duration_uses_neutral_identity() {
+        let (bars, _) = parse_codex(&load(
+            r#"{
+            "rate_limit": {
+                "primary_window": {
+                    "used_percent": 12,
+                    "limit_window_seconds": 86400,
+                    "reset_at": 1784487600
+                }
+            }
+        }"#,
+        ));
+        assert_eq!(bars[0].id, "primary");
+        assert_eq!(bars[0].label, "Primary");
     }
 
     #[test]
