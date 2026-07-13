@@ -20,7 +20,10 @@ export function fmtCountdown(resetsAt: number | null, nowMs: number): string {
 }
 
 export function fmtCompactCountdown(resetsAt: number | null, nowMs: number): string {
-  return fmtCountdown(resetsAt, nowMs).replace(/ (AM|PM)$/, "");
+  return fmtCountdown(resetsAt, nowMs).replace(
+    / (AM|PM)$/,
+    (_match, dayPeriod: string) => (dayPeriod === "AM" ? "a" : "p"),
+  );
 }
 
 export function fmtAge(fetchedAt: number, nowMs: number): string {

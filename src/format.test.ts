@@ -40,9 +40,18 @@ describe("fmtCountdown", () => {
 describe("fmtCompactCountdown", () => {
   const now = 1_783_712_399_000;
 
-  it("omits the day period from multi-day reset times", () => {
+  it("shortens but preserves the day period for multi-day reset times", () => {
     const out = fmtCompactCountdown(1_783_712_399 + 94 * 3600, now);
-    expect(out).toMatch(/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d{1,2}:\d{2}$/);
+    expect(out).toMatch(/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d{1,2}:\d{2}[ap]$/);
+  });
+
+  it("keeps matching morning and evening hours unambiguous", () => {
+    const morning = new Date(2030, 0, 7, 1).getTime() / 1000;
+    const evening = new Date(2030, 0, 7, 13).getTime() / 1000;
+    const twoDaysEarlier = (morning - 2 * 86400) * 1000;
+
+    expect(fmtCompactCountdown(morning, twoDaysEarlier)).toMatch(/1:00a$/);
+    expect(fmtCompactCountdown(evening, twoDaysEarlier)).toMatch(/1:00p$/);
   });
 
   it("keeps relative countdowns unchanged", () => {
