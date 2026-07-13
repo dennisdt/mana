@@ -1,19 +1,34 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
+import {
+  currentMonitor,
+  getCurrentWindow,
+  LogicalSize,
+  PhysicalPosition,
+} from "@tauri-apps/api/window";
 import { fmtAge, fmtCountdown, manaLeft, planLabel } from "./format";
 import { cardHtml, pillHtml, type Snapshot } from "./view";
+import {
+  COLLAPSED_HEIGHT,
+  COLLAPSED_WIDTH,
+  createHoverIntent,
+  expandedHeight,
+  expandedOrigin,
+  EXPANDED_WIDTH,
+} from "./window-layout";
 
 type Activity = { claude: boolean; codex: boolean };
 
-const COLLAPSED = new LogicalSize(340, 48);
-const EXPANDED = new LogicalSize(340, 248);
+const COLLAPSED = new LogicalSize(COLLAPSED_WIDTH, COLLAPSED_HEIGHT);
 
 const snapshots = new Map<string, Snapshot>();
 
 const activity: Record<string, boolean> = { claude: false, codex: false };
 let hovering = false;
 let moving = false;
+let expanded = false;
+let collapsedOrigin: PhysicalPosition | undefined;
+let expandedOffsetX = 0;
 
 function spriteState(provider: string): string {
   if (moving || hovering) return "hover";
@@ -74,6 +89,7 @@ function renderProvider(provider: string): void {
   if (s && key !== "absent") applyData(pill, card, s);
   tick();
   updateSprites();
+  resizeExpandedContent();
 }
 
 function tick(): void {
@@ -88,26 +104,60 @@ function tick(): void {
 }
 
 let sizing: Promise<void> = Promise.resolve();
-function setExpanded(on: boolean): void {
-  hovering = on;
+
+function resizeExpandedContent(): void {
+  if (!expanded) return;
   sizing = sizing.then(async () => {
-    const win = getCurrentWindow();
-    const pos = await win.outerPosition();
-    if (on) {
-      await win.setSize(EXPANDED);
-      await win.setPosition(pos);
-      document.body.classList.add("expanded");
-    } else {
-      document.body.classList.remove("expanded");
-      await win.setSize(COLLAPSED);
-      await win.setPosition(pos);
-    }
-    updateSprites();
+    if (!expanded) return;
+    const card = document.getElementById("card")!;
+    await getCurrentWindow().setSize(
+      new LogicalSize(EXPANDED_WIDTH, expandedHeight(card.scrollHeight)),
+    );
   });
 }
 
-document.body.addEventListener("mouseenter", () => setExpanded(true));
-document.body.addEventListener("mouseleave", () => setExpanded(false));
+function setExpanded(on: boolean): void {
+  if (expanded === on) return;
+  expanded = on;
+  sizing = sizing.then(async () => {
+    const win = getCurrentWindow();
+    if (on) {
+      document.body.classList.add("expanded");
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+      const card = document.getElementById("card")!;
+      const origin = await win.outerPosition();
+      const monitor = await currentMonitor();
+      const target = monitor
+        ? expandedOrigin(origin, {
+            x: monitor.workArea.position.x,
+            y: monitor.workArea.position.y,
+            width: monitor.workArea.size.width,
+            height: monitor.workArea.size.height,
+          }, monitor.scaleFactor)
+        : origin;
+      collapsedOrigin = origin;
+      expandedOffsetX = target.x - origin.x;
+      await win.setSize(new LogicalSize(EXPANDED_WIDTH, expandedHeight(card.scrollHeight)));
+      await win.setPosition(new PhysicalPosition(target.x, target.y));
+    } else {
+      document.body.classList.remove("expanded");
+      await win.setSize(COLLAPSED);
+      if (collapsedOrigin) await win.setPosition(collapsedOrigin);
+      collapsedOrigin = undefined;
+      expandedOffsetX = 0;
+    }
+  });
+}
+
+const hoverIntent = createHoverIntent(
+  (value) => {
+    hovering = value;
+    updateSprites();
+  },
+  setExpanded,
+);
+document.body.addEventListener("mouseenter", hoverIntent.enter);
+document.body.addEventListener("mouseleave", hoverIntent.leave);
 
 let moveTimer: ReturnType<typeof setTimeout> | undefined;
 void getCurrentWindow().onMoved(() => {
@@ -117,6 +167,17 @@ void getCurrentWindow().onMoved(() => {
   moveTimer = setTimeout(() => {
     moving = false;
     updateSprites();
+    if (expanded) {
+      sizing = sizing.then(async () => {
+        const position = await getCurrentWindow().outerPosition();
+        if (expanded) {
+          collapsedOrigin = new PhysicalPosition(
+            position.x - expandedOffsetX,
+            position.y,
+          );
+        }
+      });
+    }
   }, 300);
 });
 
