@@ -11,7 +11,10 @@ import { cardHtml, pillHtml, type Snapshot } from "./view";
 import {
   COLLAPSED_HEIGHT,
   COLLAPSED_WIDTH,
+  collapsedOriginFromExpanded,
   createHoverIntent,
+  createRequestRevision,
+  createSerialQueue,
   expandedHeight,
   expandedOrigin,
   EXPANDED_WIDTH,
@@ -103,48 +106,87 @@ function tick(): void {
   });
 }
 
-let sizing: Promise<void> = Promise.resolve();
+const enqueueSizing = createSerialQueue((error) => {
+  console.error("[mana] window sizing failed", error);
+});
+const requestRevision = createRequestRevision();
+
+function nextLayoutFrame(): Promise<void> {
+  return new Promise((resolve) => requestAnimationFrame(() => resolve()));
+}
 
 function resizeExpandedContent(): void {
   if (!expanded) return;
-  sizing = sizing.then(async () => {
+  void enqueueSizing(async () => {
     if (!expanded) return;
     const card = document.getElementById("card")!;
-    await getCurrentWindow().setSize(
+    const win = getCurrentWindow();
+    const position = await win.outerPosition();
+    await win.setSize(
       new LogicalSize(EXPANDED_WIDTH, expandedHeight(card.scrollHeight)),
     );
+    await win.setPosition(position);
   });
 }
 
 function setExpanded(on: boolean): void {
   if (expanded === on) return;
   expanded = on;
-  sizing = sizing.then(async () => {
+  const revision = requestRevision.issue();
+  void enqueueSizing(async () => {
+    if (expanded !== on) return;
+    if (on && document.body.classList.contains("expanded")) return;
     const win = getCurrentWindow();
     if (on) {
-      document.body.classList.add("expanded");
-      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-      const card = document.getElementById("card")!;
-      const origin = await win.outerPosition();
-      const monitor = await currentMonitor();
-      const target = monitor
-        ? expandedOrigin(origin, {
-            x: monitor.workArea.position.x,
-            y: monitor.workArea.position.y,
-            width: monitor.workArea.size.width,
-            height: monitor.workArea.size.height,
-          }, monitor.scaleFactor)
-        : origin;
-      collapsedOrigin = origin;
-      expandedOffsetX = target.x - origin.x;
-      await win.setSize(new LogicalSize(EXPANDED_WIDTH, expandedHeight(card.scrollHeight)));
-      await win.setPosition(new PhysicalPosition(target.x, target.y));
+      try {
+        const origin = await win.outerPosition();
+        const monitor = await currentMonitor();
+        const target = monitor
+          ? expandedOrigin(origin, {
+              x: monitor.workArea.position.x,
+              y: monitor.workArea.position.y,
+              width: monitor.workArea.size.width,
+              height: monitor.workArea.size.height,
+            }, monitor.scaleFactor)
+          : origin;
+        collapsedOrigin = origin;
+        expandedOffsetX = target.x - origin.x;
+        document.body.classList.add("expanded");
+        await win.setSize(new LogicalSize(EXPANDED_WIDTH, COLLAPSED_HEIGHT));
+        await win.setPosition(new PhysicalPosition(target.x, target.y));
+        await nextLayoutFrame();
+        if (expanded !== on) return;
+        const card = document.getElementById("card")!;
+        await win.setSize(new LogicalSize(EXPANDED_WIDTH, expandedHeight(card.scrollHeight)));
+        await win.setPosition(new PhysicalPosition(target.x, target.y));
+      } catch (error) {
+        if (requestRevision.isCurrent(revision) && expanded === on) expanded = false;
+        document.body.classList.remove("expanded");
+        await win.setSize(COLLAPSED).catch(() => undefined);
+        if (collapsedOrigin) await win.setPosition(collapsedOrigin).catch(() => undefined);
+        collapsedOrigin = undefined;
+        expandedOffsetX = 0;
+        throw error;
+      }
     } else {
+      let restoreOrigin = collapsedOrigin;
+      if (restoreOrigin) {
+        try {
+          const position = await win.outerPosition();
+          const restored = collapsedOriginFromExpanded(position, expandedOffsetX);
+          restoreOrigin = new PhysicalPosition(restored.x, restored.y);
+        } catch (error) {
+          console.error("[mana] could not capture expanded position", error);
+        }
+      }
       document.body.classList.remove("expanded");
-      await win.setSize(COLLAPSED);
-      if (collapsedOrigin) await win.setPosition(collapsedOrigin);
-      collapsedOrigin = undefined;
-      expandedOffsetX = 0;
+      try {
+        await win.setSize(COLLAPSED);
+        if (restoreOrigin) await win.setPosition(restoreOrigin);
+      } finally {
+        collapsedOrigin = undefined;
+        expandedOffsetX = 0;
+      }
     }
   });
 }
@@ -155,6 +197,7 @@ const hoverIntent = createHoverIntent(
     updateSprites();
   },
   setExpanded,
+  () => moving,
 );
 document.body.addEventListener("mouseenter", hoverIntent.enter);
 document.body.addEventListener("mouseleave", hoverIntent.leave);
@@ -167,17 +210,7 @@ void getCurrentWindow().onMoved(() => {
   moveTimer = setTimeout(() => {
     moving = false;
     updateSprites();
-    if (expanded) {
-      sizing = sizing.then(async () => {
-        const position = await getCurrentWindow().outerPosition();
-        if (expanded) {
-          collapsedOrigin = new PhysicalPosition(
-            position.x - expandedOffsetX,
-            position.y,
-          );
-        }
-      });
-    }
+    hoverIntent.movementSettled();
   }, 300);
 });
 
