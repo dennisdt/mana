@@ -12,6 +12,21 @@ describe("fantasy gaming HUD stylesheet", () => {
     expect(styles).not.toMatch(/\.track::after\s*\{[^}]*mana-bar-frame/s);
   });
 
+  it("renders free-standing illustrated mage atlases", () => {
+    expect(styles).toContain('url("/sprites/claude-fire-poison.png")');
+    expect(styles).toContain('url("/sprites/codex-ice-lightning.png")');
+    expect(styles).not.toContain("clawd.png");
+    expect(styles).not.toContain("nimbus.png");
+    expect(styles).not.toContain(".familiar-slot::before");
+    expect(styles).not.toContain(".familiar-slot::after");
+    expect(styles).not.toContain("image-rendering: pixelated");
+    expect(styles).toMatch(/#card section\s*\{[^}]*grid-template-columns:\s*60px minmax\(0, 1fr\)/s);
+    expect(styles).toMatch(/\.sprite\s*\{[^}]*width:\s*56px[^}]*height:\s*56px[^}]*background-size:\s*224px 168px[^}]*animation:\s*sprite-run 1\.15s steps\(4\) infinite/s);
+    expect(styles).toMatch(/\.sprite\[data-state="working"\]\s*\{[^}]*background-position-y:\s*-56px[^}]*animation-duration:\s*0\.68s/s);
+    expect(styles).toMatch(/\.sprite\[data-state="hover"\]\s*\{[^}]*background-position-y:\s*-112px[^}]*animation-duration:\s*0\.82s/s);
+    expect(styles).toMatch(/@keyframes sprite-run\s*\{[^}]*background-position-x:\s*0[^}]*\}[^}]*background-position-x:\s*-224px/s);
+  });
+
   it("declares fixed frame and live-core geometry", () => {
     expect(styles).toContain("--meter-width: 144px");
     expect(styles).toContain("--meter-height: 20px");
@@ -30,13 +45,11 @@ describe("fantasy gaming HUD stylesheet", () => {
     expect(styles).toContain(".stale .fill");
     expect(styles).toContain("animation: magic-glint 3.2s ease-in-out infinite");
     expect(styles).toContain("@media (prefers-reduced-motion: reduce)");
-    expect(styles).toContain(".provider-card[data-working] .familiar-slot::after");
     const reducedMotion = styles.slice(
       styles.indexOf("@media (prefers-reduced-motion: reduce)"),
     );
     expect(reducedMotion).toContain(".sprite");
     expect(reducedMotion).toContain(".fill::before");
-    expect(reducedMotion).toContain(".provider-card[data-working] .familiar-slot::after");
     expect(reducedMotion).toContain(".provider-card[data-working] .activity-signal");
     expect(reducedMotion).toContain("animation: none");
   });

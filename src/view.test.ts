@@ -13,7 +13,7 @@ const weeklyOnly = {
 describe("cardHtml", () => {
   it("renders a provider-owned familiar and weekly-only row", () => {
     const html = cardHtml(weeklyOnly, "codex");
-    expect(html).toContain('class="sprite nimbus"');
+    expect(html).toContain('class="sprite codex-mage"');
     expect(html).toContain('data-provider="codex"');
     expect(html).toContain('class="lbl">Weekly</span>');
     expect(html).toContain('class="track codex"');
@@ -34,7 +34,7 @@ describe("cardHtml", () => {
 
   it("keeps the provider roster shell when data is absent", () => {
     const html = cardHtml(undefined, "claude");
-    expect(html).toContain('class="sprite clawd"');
+    expect(html).toContain('class="sprite claude-mage"');
     expect(html).toContain("Claude");
     expect(html).toContain("log in via the claude CLI");
   });

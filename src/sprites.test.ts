@@ -1,5 +1,5 @@
 // @ts-expect-error Vitest runs in Node, while the app intentionally omits Node types.
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 // @ts-expect-error Vitest runs in Node, while the app intentionally omits Node types.
 import { inflateSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
@@ -118,4 +118,10 @@ describe("elemental mage sprite atlases", () => {
   it("keeps the Claude atlas aligned, padded, and transparent", () => {
     verifyAtlas("../public/sprites/claude-fire-poison.png");
   });
+});
+
+it("retires the deterministic pixel familiar assets", () => {
+  expect(existsSync(new URL("../public/sprites/clawd.png", import.meta.url))).toBe(false);
+  expect(existsSync(new URL("../public/sprites/nimbus.png", import.meta.url))).toBe(false);
+  expect(existsSync(new URL("../scripts/gen-sprites.py", import.meta.url))).toBe(false);
 });

@@ -21,7 +21,7 @@ function esc(value: string): string {
 }
 
 function spriteHtml(provider: string): string {
-  const className = provider === "claude" ? "clawd" : "nimbus";
+  const className = provider === "claude" ? "claude-mage" : "codex-mage";
   return `<div class="sprite ${className}" data-provider="${provider}" data-state="idle" aria-hidden="true"></div>`;
 }
 
