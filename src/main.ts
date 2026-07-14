@@ -49,7 +49,11 @@ function applyData(card: HTMLElement, s: Snapshot): void {
     card.querySelectorAll<HTMLElement>(`.track[data-bar="${i}"]`).forEach((track) => {
       track.classList.toggle("low", left < 30);
       const fill = track.querySelector<HTMLElement>(".fill");
-      if (fill) fill.style.width = `${meterFillPixels(left)}px`;
+      if (fill) {
+        const pixels = meterFillPixels(left);
+        fill.style.width = `${pixels}px`;
+        fill.dataset.empty = String(pixels === 0);
+      }
     });
     card.querySelectorAll<HTMLElement>(`.pct[data-bar="${i}"]`).forEach((el) => {
       el.textContent = `${Math.round(left)}%`;

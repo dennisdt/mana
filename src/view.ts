@@ -28,7 +28,7 @@ function spriteHtml(provider: string): string {
 function barHtml(snapshot: Snapshot, bar: Bar, index: number): string {
   const left = manaLeft(bar.used_percent);
   const pixels = meterFillPixels(left);
-  return `<div class="track ${snapshot.provider}${left < 30 ? " low" : ""}" data-bar="${index}"><div class="fill" style="width:${pixels}px"></div></div>`;
+  return `<div class="track ${snapshot.provider}${left < 30 ? " low" : ""}" data-bar="${index}"><div class="fill" data-empty="${pixels === 0}" style="width:${pixels}px"></div></div>`;
 }
 
 export function cardHtml(snapshot: Snapshot | undefined, provider: string): string {

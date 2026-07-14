@@ -17,9 +17,19 @@ describe("cardHtml", () => {
     expect(html).toContain('data-provider="codex"');
     expect(html).toContain('class="lbl">Weekly</span>');
     expect(html).toContain('class="track codex"');
-    expect(html).toContain('class="fill" style="width:55px"');
+    expect(html).toContain('class="fill" data-empty="false" style="width:52px"');
+    expect(html.match(/class="row"/g)).toHaveLength(1);
     expect(html).not.toContain('class="slot"');
     expect(html).not.toContain("5 hour");
+  });
+
+  it("marks a depleted meter so zero width cannot retain a glow", () => {
+    const depleted = {
+      ...weeklyOnly,
+      bars: [{ ...weeklyOnly.bars[0], used_percent: 100 }],
+    };
+    const html = cardHtml(depleted, "codex");
+    expect(html).toContain('class="fill" data-empty="true" style="width:0px"');
   });
 
   it("keeps the provider roster shell when data is absent", () => {
