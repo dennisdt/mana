@@ -18,7 +18,7 @@ Make mana feel like a polished fantasy-game status panel rather than a retro pix
 - Use a 440px logical window with content-measured height and monitor-edge containment.
 - Generate one original fantasy mana-bar frame with silver structure, restrained gold filigree, crystal end caps, and subtle leaf or wing motifs.
 - Render every meter at exactly 144x20 logical pixels.
-- Place a code-driven 126x8 live energy core at x=9, y=6 over the generated frame's dark recessed center.
+- Place a code-driven 116x8 live energy core at x=14, y=6 over the generated frame's dark recessed center.
 - Keep meter percentage, color, low state, zero state, glow, and motion controlled by application code.
 - Keep Claude and Codex energy colors distinct while applying the same glow and magical glint to every non-empty core.
 - Preserve Clawd and Nimbus as pixel familiars beside their provider sections.
@@ -57,7 +57,7 @@ The visual language combines a quiet macOS glass utility with a bright, friendly
 - Provider layout: `44px minmax(0, 1fr)` with an 11px gap.
 - Usage-row layout: `52px 144px minmax(0, 1fr)` with 8px gaps.
 - Meter frame: exactly 144x20 logical pixels.
-- Live core: exactly 126x8 logical pixels positioned 9px from the left and 6px from the top.
+- Live core: exactly 116x8 logical pixels positioned 14px from the left and 6px from the top.
 - The final column is right-aligned and must fit `100% · Sun 12:51 PM` without clipping, ellipsis, overlap, or horizontal scroll.
 - Each familiar occupies a 44px portrait rail beside its own provider band.
 
@@ -70,7 +70,7 @@ Use built-in imagegen to create one original neutral frame. The final production
 - One isolated horizontal fantasy mana-bar frame, viewed perfectly straight-on with no perspective.
 - Friendly high-polish fantasy MMORPG UI treatment: bright silver structure, restrained warm-gold filigree, small faceted opal crystal end caps, and compact leaf or wing motifs.
 - Symmetrical silhouette and consistent thickness so the same frame works for every provider and row.
-- A plain, continuous, dark charcoal recessed center large enough to hold the complete 126x8 live core.
+- A plain, continuous, dark charcoal recessed center large enough to hold the complete 116x8 live core.
 - Outer background becomes transparent after chroma-key removal. The center remains opaque and dark; it does not need transparency.
 - No energy fill, text, letters, numbers, logos, icons, characters, scenery, cast shadow, reflection, particles, watermark, or green material.
 - No hard-sci-fi machinery, pixel-art treatment, grimdark spikes, oversized gems, oversized wings, chunky bolts, or copied game asset.
@@ -109,9 +109,9 @@ The center is deliberately not required to be transparent. CSS places the live c
 ## Meter Construction
 
 - `.track` owns a fixed 144x20 logical box and displays the generated PNG as its frame/background layer.
-- `.fill` is a separate 126x8 code-driven layer at x=9, y=6 above the dark center but inside the decorative border.
+- `.fill` is a separate 116x8 code-driven layer at x=14, y=6 above the dark center but inside the decorative border.
 - Shared TypeScript constants define width, height, insets, channel width, and channel height. Initial rendering and live updates use the same `meterFillPixels()` function.
-- A value of 0% renders no energy or glow. A value of 100% fills all 126 channel pixels without covering the frame.
+- A value of 0% renders no energy or glow. A value of 100% fills all 116 channel pixels without covering the frame.
 - Every non-empty fill receives the same two-layer glow, narrow highlight, and slow magical glint. Only provider or warning hue changes.
 - The generated silver/gold frame remains identical across every row.
 - Working state does not change meter geometry, glow strength, or animation timing.
@@ -171,7 +171,7 @@ The center is deliberately not required to be transparent. CSS places the live c
 ### Automated
 
 - Write failing tests before changing meter geometry, zero-energy state, or window width.
-- Verify percentage-to-pixel output at 0%, 1%, 29%, 30%, 50%, 99%, and 100% using the 126px channel.
+- Verify percentage-to-pixel output at 0%, 1%, 29%, 30%, 50%, 99%, and 100% using the 116px channel.
 - Verify Codex weekly-only remains exactly one `Weekly` row.
 - Verify the stylesheet references only the generated fantasy frame, defines 144x20 meter geometry, avoids a global stale filter, and covers reduced motion.
 - Keep renderer escaping, absent state, content height, work-area clamp, and serialized-queue recovery coverage.
@@ -181,7 +181,7 @@ The center is deliberately not required to be transparent. CSS places the live c
 
 - Confirm the final PNG is 288x40 RGBA with transparent outer corners.
 - Confirm the outer silhouette is approximately 7.2:1, symmetrical, and free of visible green fringe.
-- Confirm the central 252x16 physical safe rectangle corresponding to the 126x8 logical core is dark, visually quiet, and contains no bright ornament.
+- Confirm the central 232x16 physical safe rectangle corresponding to the 116x8 logical core is dark, visually quiet, and contains no bright ornament.
 - Confirm there is no text, logo, character, fill, watermark, perspective, hard-sci-fi machinery, or copied asset.
 - Confirm silver, gold, crystal, and carved details survive at 144x20 logical pixels.
 

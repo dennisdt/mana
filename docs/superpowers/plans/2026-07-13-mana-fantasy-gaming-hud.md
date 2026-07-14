@@ -12,7 +12,7 @@
 
 - The provider roster is permanently expanded; no compact mode or hover-driven geometry returns.
 - Window width is exactly 440 logical pixels; initial height remains 175 and runtime height remains measured from `#card.scrollHeight`.
-- Every usage track is exactly 144x20 logical pixels with a 126x8 live core at x=9, y=6.
+- Every usage track is exactly 144x20 logical pixels with a 116x8 live core at x=14, y=6.
 - `meterFillPixels(percent: number): number` remains the single clamped percentage-to-pixel interface used by initial rendering and live updates.
 - The production frame is original generated art at `public/hud/mana-bar-frame.png`, normalized to 288x40 RGBA for Retina rendering.
 - Use built-in imagegen and chroma-key removal first. A targeted built-in edit may refine the selected frame. Never switch to CLI or require `OPENAI_API_KEY` without explicit user approval.
@@ -38,9 +38,9 @@
 - Create `public/hud/mana-bar-frame.png`: original 288x40 fantasy frame rendered at 144x20 logical pixels.
 - Create `src/styles.test.ts`: source-level contract for fantasy asset reference, fixed geometry, retired asset removal, readable stale state, and reduced motion.
 - Modify `src/meter.ts`: exact outer and live-core geometry plus clamped fill conversion.
-- Modify `src/meter.test.ts`: boundary coverage for the 126px core.
+- Modify `src/meter.test.ts`: boundary coverage for the 116px core.
 - Modify `src/view.ts`: emit the new fill width and explicit zero-energy state.
-- Modify `src/view.test.ts`: verify 126px math, zero-energy state, and exactly one weekly Codex row.
+- Modify `src/view.test.ts`: verify 116px math, zero-energy state, and exactly one weekly Codex row.
 - Modify `src/main.ts`: synchronize zero-energy state during live updates.
 - Modify `src/window-layout.ts`: widen the roster to 440px.
 - Modify `src/window-layout.test.ts`: assert Tauri/TypeScript geometry parity and old-position reclamping.
@@ -60,7 +60,7 @@
 - Scratch only: `.superpowers/imagegen/`
 
 **Interfaces:**
-- Produces: a 288x40 RGBA PNG at `public/hud/mana-bar-frame.png` with transparent outer corners and an opaque, dark, visually quiet 252x16 center safe rectangle.
+- Produces: a 288x40 RGBA PNG at `public/hud/mana-bar-frame.png` with transparent outer corners and an opaque, dark, visually quiet 232x16 center safe rectangle.
 - Consumes: built-in `image_gen__imagegen`, optional built-in edit mode, installed `remove_chroma_key.py`, `sips`, and the approved fantasy prompt.
 - Preserves: the three tracked boss-bar PNGs until Task 4 changes CSS.
 
@@ -95,7 +95,7 @@ Primary request: Create one polished whimsical fantasy mana-bar frame, isolated 
 Subject: A symmetrical bright-silver frame with restrained warm-gold filigree, small faceted opal crystal end caps, and subtle compact leaf or wing carvings. Include one plain continuous dark-charcoal recessed center channel for a live magical energy layer placed on top later.
 Style/medium: friendly high-end 2D fantasy MMORPG interface asset with softly dimensional painted materials, crisp readable edges, playful polish, and no direct reference to any existing game asset
 Composition/framing: one centered horizontal frame, orthographic front view, approximately 7.2:1 outer silhouette, occupying most of the canvas width. Keep all ornament outside the central safe rectangle. The center channel must be uninterrupted and visually simple.
-Safe-center geometry: Reserve the centered middle 87.5% of the frame width and middle 40% of the frame height as one uninterrupted opaque dark-charcoal rectangle. No silver, gold, crystal, carving, highlight, seam, post, rune, or bright pixel may enter that rectangle.
+Safe-center geometry: Reserve the centered middle 80.5% of the frame width and middle 40% of the frame height as one uninterrupted opaque dark-charcoal rectangle. No silver, gold, crystal, carving, highlight, seam, post, rune, or bright pixel may enter that rectangle.
 Lighting/mood: bright soft fantasy-game highlights with controlled silver shine and subtle jewel sparkle; no cast shadow
 Color palette: silver, pearl white, small warm-gold accents, opal highlights, and a dark neutral center only
 Scene/backdrop: perfectly flat solid #00ff00 chroma-key outer background for removal. The central recessed channel stays dark charcoal, not green.
@@ -123,7 +123,7 @@ Composition correction: The prior object was too tall and only about 4:1. Produc
 
 After the retry, replace only `.superpowers/imagegen/mana-fantasy-frame-keyed.png`, re-inspect it, and repeat Steps 4-5. The preferred source range remains 7.0:1 through 7.4:1. A wider retry up to 9.5:1 may proceed only when a scratch 288x40 normalization and 144x20 derivative remain visually polished with no obvious crystal or filigree deformation. Ratios outside 7.0:1 through 9.5:1 remain blocking.
 
-If the accepted retry's exterior is polished but its normalized center-safe rectangle contains bright end ornament, perform one targeted built-in image edit using the retry keyed source as the sole referenced image. Preserve the complete silver, gold, opal, silhouette, straight-on view, and flat green exterior. Replace only the recessed center channel so the centered middle 87.5% of frame width and middle 40% of frame height are uninterrupted neutral dark charcoal, with no gold, silver, crystal, highlight, seam, or bright pixel inside that rectangle. Re-run chroma removal, bounds, normalization, and every deterministic QA gate from the edited result. One such center-only edit is allowed; do not use a CLI fallback.
+If the accepted retry's exterior is polished but its normalized center-safe rectangle contains bright end ornament, perform one targeted built-in image edit using the retry keyed source as the sole referenced image. Preserve the complete silver, gold, opal, silhouette, straight-on view, and flat green exterior. Replace only the recessed center channel so the centered middle 80.5% of frame width and middle 40% of frame height are uninterrupted neutral dark charcoal, with no gold, silver, crystal, highlight, seam, or bright pixel inside that rectangle. Re-run chroma removal, bounds, normalization, and every deterministic QA gate from the edited result. One such center-only edit is allowed; do not use a CLI fallback.
 
 - [ ] **Step 4: Remove only the outer chroma background**
 
@@ -216,10 +216,10 @@ assert 0.38 <= coverage <= 0.92, f'implausible frame coverage: {coverage:.3f}'
 symmetry_error = float(np.mean(visible != visible[:, ::-1]))
 assert symmetry_error <= 0.08, f'asymmetric silhouette: {symmetry_error:.3f}'
 
-center = rgba[12:28, 18:270]
+center = rgba[12:28, 28:260]
 center_rgb = center[:, :, :3]
 center_alpha = center[:, :, 3]
-assert center.shape[:2] == (16, 252), center.shape
+assert center.shape[:2] == (16, 232), center.shape
 assert int(center_alpha.min()) >= 250, 'center safe rectangle is not opaque'
 luma = (
     center_rgb[:, :, 0] * 0.2126
@@ -284,7 +284,7 @@ Expected: commit contains only the passing fantasy PNG. Keep ignored imagegen sc
 - Modify: `src/main.ts`
 
 **Interfaces:**
-- Produces: `METER_WIDTH = 144`, `METER_HEIGHT = 20`, `METER_INSET_X = 9`, `METER_INSET_Y = 6`, `METER_CHANNEL_WIDTH = 126`, `METER_CHANNEL_HEIGHT = 8`, and unchanged `meterFillPixels(percent): number`.
+- Produces: `METER_WIDTH = 144`, `METER_HEIGHT = 20`, `METER_INSET_X = 14`, `METER_INSET_Y = 6`, `METER_CHANNEL_WIDTH = 116`, `METER_CHANNEL_HEIGHT = 8`, and unchanged `meterFillPixels(percent): number`.
 - Produces: `data-empty="true|false"` on `.fill` during initial render and live updates.
 - Consumes: `manaLeft(usedPercent)` and existing snapshots.
 
@@ -316,9 +316,9 @@ describe("fantasy mana meter", () => {
     }).toEqual({
       width: 144,
       height: 20,
-      insetX: 9,
+      insetX: 14,
       insetY: 6,
-      channelWidth: 126,
+      channelWidth: 116,
       channelHeight: 8,
     });
   });
@@ -327,13 +327,13 @@ describe("fantasy mana meter", () => {
     [-1, 0],
     [0, 0],
     [1, 1],
-    [29, 37],
-    [30, 38],
-    [50, 63],
-    [55, 69],
-    [99, 125],
-    [100, 126],
-    [101, 126],
+    [29, 34],
+    [30, 35],
+    [50, 58],
+    [55, 64],
+    [99, 115],
+    [100, 116],
+    [101, 116],
   ])("maps %s percent to %s core pixels", (percent, pixels) => {
     expect(meterFillPixels(percent)).toBe(pixels);
   });
@@ -342,10 +342,10 @@ describe("fantasy mana meter", () => {
 
 - [ ] **Step 2: Strengthen renderer regression cases**
 
-In the weekly-only renderer test, change fill expectation to `57px` and assert one row:
+In the weekly-only renderer test, change fill expectation to `52px` and assert one row:
 
 ```typescript
-expect(html).toContain('class="fill" data-empty="false" style="width:57px"');
+expect(html).toContain('class="fill" data-empty="false" style="width:52px"');
 expect(html.match(/class="row"/g)).toHaveLength(1);
 ```
 
@@ -362,7 +362,7 @@ it("marks a depleted meter so zero width cannot retain a glow", () => {
 });
 ```
 
-The fixture is 55% used, leaving 45%; `round(126 * 0.45) = 57`.
+The fixture is 55% used, leaving 45%; `round(116 * 0.45) = 52`.
 
 - [ ] **Step 3: Run focused tests and verify RED**
 
@@ -379,7 +379,7 @@ Replace `src/meter.ts` with:
 ```typescript
 export const METER_WIDTH = 144;
 export const METER_HEIGHT = 20;
-export const METER_INSET_X = 9;
+export const METER_INSET_X = 14;
 export const METER_INSET_Y = 6;
 export const METER_CHANNEL_WIDTH = METER_WIDTH - METER_INSET_X * 2;
 export const METER_CHANNEL_HEIGHT = METER_HEIGHT - METER_INSET_Y * 2;
@@ -550,7 +550,7 @@ describe("fantasy gaming HUD stylesheet", () => {
   it("declares fixed frame and live-core geometry", () => {
     expect(styles).toContain("--meter-width: 144px");
     expect(styles).toContain("--meter-height: 20px");
-    expect(styles).toContain("--meter-channel-width: 126px");
+    expect(styles).toContain("--meter-channel-width: 116px");
     expect(styles).toContain("--meter-channel-height: 8px");
     expect(styles).toContain('.fill[data-empty="true"]');
   });
@@ -595,9 +595,9 @@ Use this complete stylesheet:
   --hud-radius: 8px;
   --meter-width: 144px;
   --meter-height: 20px;
-  --meter-inset-x: 9px;
+  --meter-inset-x: 14px;
   --meter-inset-y: 6px;
-  --meter-channel-width: 126px;
+  --meter-channel-width: 116px;
   --meter-channel-height: 8px;
 }
 
@@ -1027,8 +1027,8 @@ Create `.superpowers/visual-contract.html`:
           <div class="provider-content">
             <div class="head"><strong>Claude</strong><span class="plan">Max</span><span class="activity-signal"></span><span class="age"></span></div>
             <div class="rows">
-              <div class="row"><span class="lbl">5 hour</span><div class="track claude"><div class="fill" data-empty="false" style="width:126px"></div></div><span class="val"><b>100%</b><span> · Sun 12:51 PM</span></span></div>
-              <div class="row"><span class="lbl">Weekly</span><div class="track claude low"><div class="fill" data-empty="false" style="width:37px"></div></div><span class="val"><b>29%</b><span> · Tue 1:59 PM</span></span></div>
+              <div class="row"><span class="lbl">5 hour</span><div class="track claude"><div class="fill" data-empty="false" style="width:116px"></div></div><span class="val"><b>100%</b><span> · Sun 12:51 PM</span></span></div>
+              <div class="row"><span class="lbl">Weekly</span><div class="track claude low"><div class="fill" data-empty="false" style="width:34px"></div></div><span class="val"><b>29%</b><span> · Tue 1:59 PM</span></span></div>
               <div class="row"><span class="lbl">Fable</span><div class="track claude low"><div class="fill" data-empty="true" style="width:0px"></div></div><span class="val"><b>0%</b><span> · Tue 1:59 PM</span></span></div>
             </div>
           </div>
@@ -1038,7 +1038,7 @@ Create `.superpowers/visual-contract.html`:
           <div class="provider-content">
             <div class="head"><strong>Codex</strong><span class="plan">Pro</span><span class="activity-signal"></span><span class="age">2m ago</span></div>
             <div class="rows">
-              <div class="row"><span class="lbl">Weekly</span><div class="track codex"><div class="fill" data-empty="false" style="width:57px"></div></div><span class="val"><b>45%</b><span> · Sun 12:51 PM</span></span></div>
+              <div class="row"><span class="lbl">Weekly</span><div class="track codex"><div class="fill" data-empty="false" style="width:52px"></div></div><span class="val"><b>45%</b><span> · Sun 12:51 PM</span></span></div>
             </div>
           </div>
         </section>
@@ -1079,7 +1079,7 @@ const fills = [...document.querySelectorAll(".fill")];
       left: fill.left - track.left,
       top: fill.top - track.top,
       height: fill.height,
-      rightInside: fill.right <= track.left + 135,
+      rightInside: fill.right <= track.left + 130,
       opacity: style.opacity,
       shadow: style.boxShadow,
     };
@@ -1088,7 +1088,7 @@ const fills = [...document.querySelectorAll(".fill")];
 });
 ```
 
-Expected: root 440; every track `[144, 20]`; values fit; no overflow; frame URL ends in `mana-bar-frame.png`; every fill starts at `[9, 6]`, is 8px high, and remains inside the core boundary; `codexLabels` is exactly `["Weekly"]`; the empty fill has opacity `0` and shadow `none`. Also compare label/track/value rectangles and require both declared 8px gaps without overlap. Capture normal and reduced-motion screenshots. Confirm fantasy details remain visible, the core stays inside the recess from 0%-100%, all non-empty glints use `magic-glint` with `3.2s` and identical timing, toggling `data-working` does not change track/fill rectangles or glint, stale text retains normal color/opacity, and reduced motion disables glint, sprites, signal pulse, and portrait pulse while keeping static non-empty energy visible.
+Expected: root 440; every track `[144, 20]`; values fit; no overflow; frame URL ends in `mana-bar-frame.png`; every fill starts at `[14, 6]`, is 8px high, and remains inside the core boundary; `codexLabels` is exactly `["Weekly"]`; the empty fill has opacity `0` and shadow `none`. Also compare label/track/value rectangles and require both declared 8px gaps without overlap. Capture normal and reduced-motion screenshots. Confirm fantasy details remain visible, the core stays inside the recess from 0%-100%, all non-empty glints use `magic-glint` with `3.2s` and identical timing, toggling `data-working` does not change track/fill rectangles or glint, stale text retains normal color/opacity, and reduced motion disables glint, sprites, signal pulse, and portrait pulse while keeping static non-empty energy visible.
 
 - [ ] **Step 7: Clean scratch and commit visual integration**
 
