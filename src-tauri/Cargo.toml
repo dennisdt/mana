@@ -1,6 +1,6 @@
 [package]
 name = "mana"
-version = "0.4.2"
+version = "0.4.3"
 description = "Gamer mana bars for Claude Code + Codex subscription usage"
 authors = ["Dennis Tran"]
 edition = "2021"
