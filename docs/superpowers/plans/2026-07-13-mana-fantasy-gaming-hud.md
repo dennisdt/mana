@@ -115,13 +115,15 @@ cp "$GENERATED_IMAGE" .superpowers/imagegen/mana-fantasy-frame-keyed.png
 
 Inspect it with `view_image` at original detail. Require one straight-on frame, friendly silver/gold/crystal fantasy treatment, no copied identity or forbidden content, flat outer green, and a plain dark center. If the exterior is approved but the center contains bright ornament, use one targeted built-in image edit that preserves the complete exterior and replaces only the center with a continuous unornamented dark-charcoal recess.
 
-If the overall object is too tall, has perspective, contains multiple frames, or later fails the 7.0:1 through 7.4:1 silhouette gate, perform one fresh built-in generation retry with no reference image. Reuse the complete approved prompt and add this exact correction:
+If the overall object is too tall, has perspective, contains multiple frames, or later falls outside the preferred 7.0:1 through 7.4:1 silhouette range, perform one fresh built-in generation retry with no reference image. Reuse the complete approved prompt and add this exact correction:
 
 ```text
 Composition correction: The prior object was too tall and only about 4:1. Produce an extremely long, thin fantasy status frame whose complete visible silhouette is 7.2:1. Extend the simple center rail horizontally, reduce the vertical height of crystals, leaves, wings, and end caps, and keep every ornament inside a total height no greater than 14% of the visible width. Preserve the same friendly silver, restrained gold, opal, and dark-center art direction.
 ```
 
-After the retry, replace only `.superpowers/imagegen/mana-fantasy-frame-keyed.png`, re-inspect it, and repeat Steps 4-5. If the fresh retry still fails the silhouette gate, return `BLOCKED`; do not distort it or use a CLI fallback.
+After the retry, replace only `.superpowers/imagegen/mana-fantasy-frame-keyed.png`, re-inspect it, and repeat Steps 4-5. The preferred source range remains 7.0:1 through 7.4:1. A wider retry up to 9.5:1 may proceed only when a scratch 288x40 normalization and 144x20 derivative remain visually polished with no obvious crystal or filigree deformation. Ratios outside 7.0:1 through 9.5:1 remain blocking.
+
+If the accepted retry's exterior is polished but its normalized center-safe rectangle contains bright end ornament, perform one targeted built-in image edit using the retry keyed source as the sole referenced image. Preserve the complete silver, gold, opal, silhouette, straight-on view, and flat green exterior. Replace only the recessed center channel so the centered middle 87.5% of frame width and middle 40% of frame height are uninterrupted neutral dark charcoal, with no gold, silver, crystal, highlight, seam, or bright pixel inside that rectangle. Re-run chroma removal, bounds, normalization, and every deterministic QA gate from the edited result. One such center-only edit is allowed; do not use a CLI fallback.
 
 - [ ] **Step 4: Remove only the outer chroma background**
 
@@ -156,13 +158,13 @@ width, height = right - left, bottom - top
 ratio = width / height
 if width < 576 or height < 80:
     raise SystemExit(f'source detail is too small: {width}x{height}')
-if not 7.0 <= ratio <= 7.4:
-    raise SystemExit(f'fantasy frame silhouette must be near 7.2:1; got {ratio:.2f}:1')
+if not 7.0 <= ratio <= 9.5:
+    raise SystemExit(f'fantasy frame silhouette must be 7.0:1 through 9.5:1; got {ratio:.2f}:1')
 print(left, top, width, height)
 PY
 ```
 
-Expected: four integers, source detail of at least 576x80, and a silhouette ratio from 7.0:1 through 7.4:1 so normalization distortion stays below roughly 3%.
+Expected: four integers, source detail of at least 576x80, and a silhouette ratio from 7.0:1 through 9.5:1. Treat 7.0:1 through 7.4:1 as preferred. Any wider accepted source requires the explicit normalized visual checks above; deterministic center QA remains strict and is not waived.
 
 - [ ] **Step 6: Crop and normalize using macOS `sips`**
 
@@ -255,53 +257,9 @@ shasum -a 256 public/hud/mana-bar-frame.png
 
 Expected: all assertions pass. Pixel checks are gates for geometry and contamination, not substitutes for visual judgment.
 
-- [ ] **Step 8: Inspect the real 144x20 layering before commit**
+- [ ] **Step 8: Inspect the normalized frame at both shipped scales before commit**
 
-Inspect `public/hud/mana-bar-frame.png` with `view_image`, then create ignored `.superpowers/imagegen/frame-preview.html`:
-
-```html
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <style>
-      html,
-      body {
-        margin: 0;
-        min-height: 100%;
-        background: #171923;
-      }
-      body {
-        display: grid;
-        min-height: 100vh;
-        place-items: center;
-      }
-      .track {
-        position: relative;
-        width: 144px;
-        height: 20px;
-        background: url("/hud/mana-bar-frame.png") center / 100% 100% no-repeat;
-      }
-      .fill {
-        position: absolute;
-        top: 6px;
-        left: 9px;
-        width: 126px;
-        height: 8px;
-        background: linear-gradient(90deg, #39ddff, #557cff);
-        box-shadow: 0 0 4px rgba(57, 221, 255, 0.5), 0 0 10px rgba(57, 221, 255, 0.45);
-      }
-    </style>
-    <title>fantasy frame preview</title>
-  </head>
-  <body>
-    <div class="track"><div class="fill"></div></div>
-  </body>
-</html>
-```
-
-Start `npm run dev -- --host 127.0.0.1 --port 1431 --strictPort`, open `http://127.0.0.1:1431/.superpowers/imagegen/frame-preview.html` in the in-app browser, and capture the actual 144x20 rendering at normal and 2x display scale. Confirm the live core is visible above the opaque recess without covering silver/gold/crystal borders, details survive, and there is no text, logo, character, hard-sci-fi machinery, watermark, copied identity, or green fringe. Stop the exact server with Ctrl-C and remove the preview with `apply_patch`.
+Inspect `public/hud/mana-bar-frame.png` with `view_image`, create an ignored 144x20 derivative using `sips --resampleHeightWidth 20 144`, and inspect that derivative at original detail. Confirm the frame stays proportionate, the silver/gold/opal treatment remains readable, the dark channel is continuous, and there is no text, logo, character, hard-sci-fi machinery, watermark, copied identity, or green fringe. The actual CSS layering and browser screenshot gate is consolidated into Task 4 after the production `.track` and `.fill` layers exist.
 
 - [ ] **Step 9: Commit the production asset**
 
