@@ -1195,13 +1195,14 @@ cargo metadata --manifest-path src-tauri/Cargo.toml --no-deps --format-version 1
 node -e 'const c=require("./src-tauri/tauri.conf.json"); if(c.version!=="0.4.0"||c.app.windows.find(w=>w.label==="main").width!==440) process.exit(1)'
 npm test
 npm run build
-rustfmt --edition 2021 --check src-tauri/src/lib.rs
+git diff --quiet -- src-tauri/src
+git diff --cached --quiet -- src-tauri/src
 cargo test --manifest-path src-tauri/Cargo.toml
 cargo check --manifest-path src-tauri/Cargo.toml
 git diff --check
 ```
 
-Expected: all metadata, frontend, Rust, build, format, and diff gates pass. Do not add full-repo `cargo fmt --check` as a new gate for unrelated pre-existing formatting.
+Expected: all metadata, frontend, Rust, build, source-preservation, and diff gates pass. Direct `rustfmt` and full-repo `cargo fmt --check` are not release gates because the untouched native sources contain pre-existing formatting drift and `rustfmt` recursively checks child modules.
 
 - [ ] **Step 4: Commit release metadata and documentation**
 
