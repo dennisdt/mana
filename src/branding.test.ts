@@ -12,6 +12,7 @@ const cargoToml = readFileSync(new URL("src-tauri/Cargo.toml", root), "utf8");
 const cargoLock = readFileSync(new URL("src-tauri/Cargo.lock", root), "utf8");
 const html = readFileSync(new URL("index.html", root), "utf8");
 const readme = readFileSync(new URL("README.md", root), "utf8");
+const tauriSource = readFileSync(new URL("src-tauri/src/lib.rs", root), "utf8");
 const iconUrl = new URL("src-tauri/icons/mana-potion-master.png", root);
 
 describe("Mana product identity", () => {
@@ -42,5 +43,16 @@ describe("Mana product identity", () => {
     expect(png.subarray(1, 4).toString("ascii")).toBe("PNG");
     expect(png.readUInt32BE(16)).toBe(1254);
     expect(png.readUInt32BE(20)).toBe(1254);
+  });
+
+  it("uses a dedicated native template icon for the menu bar", () => {
+    expect(tauriSource).toContain("fn tray_template_icon()");
+    expect(tauriSource).toContain('include_bytes!("../icons/tray-template.png")');
+    expect(tauriSource).toContain(".icon(tray_template_icon()?)");
+    expect(tauriSource).toContain(".icon_as_template(true)");
+    expect(tauriSource).toContain('.tooltip("Mana")');
+    expect(tauriSource).toContain('"Quit Mana"');
+    expect(tauriSource).toContain("ActivationPolicy::Accessory");
+    expect(tauriSource).not.toContain("app.default_window_icon()");
   });
 });
