@@ -117,6 +117,14 @@ body {
   --glow: var(--codex-glow);
 }
 
+#card-claude {
+  --provider-motion-offset: 0s;
+}
+
+#card-codex {
+  --provider-motion-offset: -0.8s;
+}
+
 .low {
   --c1: var(--low-1);
   --c2: var(--low-2);
@@ -134,6 +142,7 @@ body {
 
 .provider-card[data-working] .activity-signal {
   animation: status-pulse 1.6s ease-in-out infinite;
+  animation-delay: var(--provider-motion-offset);
 }
 
 .provider-content,
@@ -157,6 +166,22 @@ body {
   font-size: 11px;
   line-height: 1;
   font-variant-numeric: tabular-nums;
+}
+
+.row:nth-child(1) {
+  --row-motion-offset: 0s;
+}
+
+.row:nth-child(2) {
+  --row-motion-offset: -0.85s;
+}
+
+.row:nth-child(3) {
+  --row-motion-offset: -1.7s;
+}
+
+.row:nth-child(4) {
+  --row-motion-offset: -2.55s;
 }
 
 .head strong {
@@ -263,6 +288,7 @@ body {
   background: linear-gradient(102deg, transparent 0 34%, rgba(255, 255, 255, 0.68) 50%, transparent 66%);
   transform: translateX(-110%);
   animation: magic-glint 3.2s ease-in-out infinite;
+  animation-delay: calc(var(--provider-motion-offset) + var(--row-motion-offset));
 }
 
 .fill::after {

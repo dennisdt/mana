@@ -8,7 +8,11 @@ import {
 } from "@tauri-apps/api/window";
 import { fmtAge, fmtCountdown, manaLeft, planLabel } from "./format";
 import { meterFillPixels } from "./meter";
-import { spriteFrameAt, spriteFrameDelayAt } from "./sprite-animation";
+import {
+  spriteFrameAt,
+  spriteFrameDelayAt,
+  spritePhaseCycles,
+} from "./sprite-animation";
 import { cardHtml, type Snapshot } from "./view";
 import {
   ROSTER_WIDTH,
@@ -35,8 +39,14 @@ function spriteState(provider: string): string {
 
 function updateSpriteFrames(now: number = performance.now()): void {
   document.querySelectorAll<HTMLElement>(".sprite").forEach((element) => {
+    const phaseCycles = spritePhaseCycles(element.dataset.provider);
     const frame = String(
-      spriteFrameAt(now, element.dataset.state, spriteMotionPreference.matches),
+      spriteFrameAt(
+        now,
+        element.dataset.state,
+        spriteMotionPreference.matches,
+        phaseCycles,
+      ),
     );
     if (element.dataset.frame !== frame) element.dataset.frame = frame;
   });
@@ -44,9 +54,15 @@ function updateSpriteFrames(now: number = performance.now()): void {
 
 function scheduleSpriteFrameUpdate(now: number = performance.now()): void {
   clearTimeout(spriteFrameTimer);
-  const delays = Array.from(document.querySelectorAll<HTMLElement>(".sprite"), (element) =>
-    spriteFrameDelayAt(now, element.dataset.state, spriteMotionPreference.matches),
-  ).filter((delay): delay is number => delay !== undefined);
+  const delays = Array.from(document.querySelectorAll<HTMLElement>(".sprite"), (element) => {
+    const phaseCycles = spritePhaseCycles(element.dataset.provider);
+    return spriteFrameDelayAt(
+      now,
+      element.dataset.state,
+      spriteMotionPreference.matches,
+      phaseCycles,
+    );
+  }).filter((delay): delay is number => delay !== undefined);
   const delay = Math.min(...delays);
   if (!Number.isFinite(delay)) return;
   spriteFrameTimer = setTimeout(runSpriteFrameUpdate, delay);

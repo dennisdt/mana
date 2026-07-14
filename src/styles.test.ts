@@ -63,6 +63,21 @@ describe("fantasy gaming HUD stylesheet", () => {
     expect(reducedMotion).toContain("animation: none");
   });
 
+  it("staggers provider pulses and row glints with deterministic offsets", () => {
+    expect(styles).toMatch(/#card-claude\s*\{[^}]*--provider-motion-offset:\s*0s/s);
+    expect(styles).toMatch(/#card-codex\s*\{[^}]*--provider-motion-offset:\s*-0\.8s/s);
+    expect(styles).toMatch(/\.row:nth-child\(1\)\s*\{[^}]*--row-motion-offset:\s*0s/s);
+    expect(styles).toMatch(/\.row:nth-child\(2\)\s*\{[^}]*--row-motion-offset:\s*-0\.85s/s);
+    expect(styles).toMatch(/\.row:nth-child\(3\)\s*\{[^}]*--row-motion-offset:\s*-1\.7s/s);
+    expect(styles).toMatch(/\.row:nth-child\(4\)\s*\{[^}]*--row-motion-offset:\s*-2\.55s/s);
+    expect(styles).toMatch(
+      /\.fill::before\s*\{[^}]*animation-delay:\s*calc\(var\(--provider-motion-offset\) \+ var\(--row-motion-offset\)\)/s,
+    );
+    expect(styles).toMatch(
+      /\.provider-card\[data-working\] \.activity-signal\s*\{[^}]*animation-delay:\s*var\(--provider-motion-offset\)/s,
+    );
+  });
+
   it("preserves intrinsic card height for native content measurement", () => {
     expect(styles).toMatch(/#root\s*\{[^}]*flex-direction:\s*column/s);
     expect(styles).not.toMatch(/#card\s*\{[^}]*\bflex:\s*1(?:\s|;)/s);

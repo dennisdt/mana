@@ -4,6 +4,7 @@ import {
   SPRITE_FRAME_DURATION_MS,
   spriteFrameAt,
   spriteFrameDelayAt,
+  spritePhaseCycles,
 } from "./sprite-animation";
 
 describe("sprite frame timing", () => {
@@ -45,6 +46,28 @@ describe("sprite frame timing", () => {
   it("does not schedule new frames when reduced motion is enabled", () => {
     expect(spriteFrameDelayAt(999, "idle", true)).toBeUndefined();
   });
+
+  it.each([
+    ["idle", SPRITE_FRAME_DURATION_MS.idle],
+    ["working", SPRITE_FRAME_DURATION_MS.working],
+    ["hover", SPRITE_FRAME_DURATION_MS.hover],
+  ] as const)("stagger providers in the %s state on the same clock", (state, duration) => {
+    const claudePhase = spritePhaseCycles("claude");
+    const codexPhase = spritePhaseCycles("codex");
+
+    expect(spriteFrameAt(0, state, false, claudePhase)).toBe(0);
+    expect(spriteFrameAt(0, state, false, codexPhase)).toBe(1);
+    expect(spriteFrameDelayAt(0, state, false, claudePhase)).toBe(duration);
+    expect(spriteFrameDelayAt(0, state, false, codexPhase)).toBe(duration / 2);
+    expect(spriteFrameAt(duration / 2, state, false, codexPhase)).toBe(2);
+  });
+
+  it("uses zero phase for Claude and unknown providers", () => {
+    expect(spritePhaseCycles("claude")).toBe(0);
+    expect(spritePhaseCycles("codex")).toBe(0.375);
+    expect(spritePhaseCycles("other")).toBe(0);
+    expect(spritePhaseCycles(undefined)).toBe(0);
+  });
 });
 
 describe("sprite animation runtime", () => {
@@ -55,6 +78,16 @@ describe("sprite animation runtime", () => {
     expect(mainSource).toContain("element.dataset.frame = frame");
     expect(mainSource).toContain("setTimeout(runSpriteFrameUpdate, delay)");
     expect(mainSource).not.toContain("setInterval(updateSpriteFrames, SPRITE_TICK_MS)");
+  });
+
+  it("uses each sprite provider phase for frames and scheduling", () => {
+    expect(mainSource).toContain("spritePhaseCycles(element.dataset.provider)");
+    expect(mainSource).toMatch(
+      /spriteFrameAt\(\s*now,\s*element\.dataset\.state,\s*spriteMotionPreference\.matches,\s*phaseCycles/s,
+    );
+    expect(mainSource).toMatch(
+      /spriteFrameDelayAt\(\s*now,\s*element\.dataset\.state,\s*spriteMotionPreference\.matches,\s*phaseCycles/s,
+    );
   });
 
   it("supports older WebKit motion preference listeners", () => {
