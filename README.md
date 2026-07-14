@@ -1,4 +1,4 @@
-# mana
+# Mana
 
 Gamer mana bars for your AI subscriptions. This tiny always-on-top macOS widget
 shows how much Claude Code and Codex usage you have left across session, weekly,
@@ -17,7 +17,7 @@ Pro accounts.
 - **Codex**: `GET https://chatgpt.com/backend-api/wham/usage` using the token
   in `~/.codex/auth.json` (`$CODEX_HOME` respected).
 
-Both are read-only: mana re-reads credentials fresh on every 60s poll and
+Both are read-only: Mana re-reads credentials fresh on every 60s poll and
 **never refreshes or writes tokens**, so it cannot break your CLI logins.
 If a token has expired (401), bars dim to a "stale" state until you next use
 the CLI. Both endpoints are undocumented — expect occasional breakage.
@@ -35,7 +35,7 @@ Animations and the magical energy glint respect your Reduced Motion setting.
 
     npm install
     npm run tauri build
-    cp -R src-tauri/target/release/bundle/macos/mana.app /Applications/
+    cp -R src-tauri/target/release/bundle/macos/Mana.app /Applications/
 
 First run: macOS Keychain will ask about `security` reading
 "Claude Code-credentials" — choose **Always Allow**.
