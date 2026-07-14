@@ -14,6 +14,7 @@
 - Runtime tray PNG is exactly 36x36 RGBA on a transparent canvas.
 - Use `.icon_as_template(true)` so macOS owns the foreground color.
 - Keep `src-tauri/icons/mana-potion-master.png` and every full-color application icon unchanged.
+- Keep `ActivationPolicy::Accessory`; the running Mana widget must never appear in the Dock.
 - Visible name remains `Mana`; npm package and Rust crate names remain `mana`; bundle identifier remains `com.vantasoft.mana`.
 - Release version is exactly `0.4.5` in npm, Cargo, and Tauri metadata.
 - Keep widget layout, provider artwork, mana bars, motion, polling, activity detection, panel positioning, and tray interaction behavior unchanged.
@@ -35,7 +36,7 @@
 
 - [ ] **Step 1: Add failing runtime-source assertions**
 
-Extend `src/branding.test.ts` to require `tray_template_icon()`, `include_bytes!("../icons/tray-template.png")`, `.icon_as_template(true)`, `.tooltip("Mana")`, and `Quit Mana`; also require that `app.default_window_icon()` is absent from tray construction.
+Extend `src/branding.test.ts` to require `tray_template_icon()`, `include_bytes!("../icons/tray-template.png")`, `.icon_as_template(true)`, `.tooltip("Mana")`, `Quit Mana`, and `ActivationPolicy::Accessory`; also require that `app.default_window_icon()` is absent from tray construction.
 
 - [ ] **Step 2: Add the failing Rust asset test**
 
@@ -115,7 +116,7 @@ Back up the current `/Applications/Mana.app` to a timestamped `/tmp` path, insta
 
 - [ ] **Step 6: Relaunch and visually inspect with CuaDriver**
 
-Request permission before quitting the running app, then use CuaDriver to quit and relaunch `com.vantasoft.mana`. Capture the real menu bar and verify the glyph has no colored square, matches neighboring item height, reads as a potion, adapts to the current menu-bar color, and is not clipped or crowded.
+Request permission before quitting the running app, then use CuaDriver to quit and relaunch `com.vantasoft.mana`. Capture the real menu bar and verify the glyph has no colored square, matches neighboring item height, reads as a potion, adapts to the current menu-bar color, and is not clipped or crowded. Confirm Mana is absent from the Dock while its accessory process and menu-bar item remain running.
 
 - [ ] **Step 7: Commit**
 
@@ -135,7 +136,7 @@ git commit -m "chore: release Mana 0.4.5"
 
 - [ ] **Step 1: Review the complete diff**
 
-Check for accidental changes to full-color icons, tray callbacks, window behavior, package/crate names, or bundle identifier. Confirm the SVG and PNG represent the same filled-potion silhouette and the template flag is macOS-specific behavior provided by Tauri.
+Check for accidental changes to full-color icons, tray callbacks, accessory activation policy, window behavior, package/crate names, or bundle identifier. Confirm the SVG and PNG represent the same filled-potion silhouette, the template flag is macOS-specific behavior provided by Tauri, and no Dock icon is introduced.
 
 - [ ] **Step 2: Run final verification**
 

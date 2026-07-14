@@ -27,6 +27,7 @@ Use direction A: a filled potion silhouette with a clear liquid cutout. The silh
 - Load the dedicated PNG in Rust instead of cloning `app.default_window_icon()`.
 - Pass the image to `TrayIconBuilder` and set `.icon_as_template(true)`.
 - macOS owns the rendered foreground color so the glyph adapts automatically to light, dark, active, and inactive menu-bar appearances.
+- Mana remains an accessory application with `ActivationPolicy::Accessory`; the running widget must never create a Dock icon.
 - Set the tray tooltip to `Mana`.
 - Keep the existing left-click menu behavior, window toggle behavior, and non-activating panel behavior unchanged.
 - Change the menu command label from `Quit mana` to `Quit Mana`.
@@ -41,11 +42,12 @@ Use direction A: a filled potion silhouette with a clear liquid cutout. The silh
 ## Verification
 
 - Add a focused Rust test or build-time assertion for the dedicated tray image path and template configuration.
+- Add a regression assertion that the runtime retains `ActivationPolicy::Accessory`.
 - Verify the PNG is 36x36 RGBA, has transparent corner pixels, contains a centered non-empty silhouette, and does not fill the complete square.
 - Verify production frontend and native builds succeed and all frontend and Rust tests pass.
 - Install `/Applications/Mana.app`, confirm bundle metadata reports `Mana`, `com.vantasoft.mana`, and `0.4.5`, and compare built/installed executable and icon hashes.
-- Relaunch with CuaDriver and visually inspect the real menu bar: the icon must have no colored square, match neighboring item height, remain recognizable as a potion, and avoid clipping or crowding.
+- Relaunch with CuaDriver and visually inspect the real menu bar: the icon must have no colored square, match neighboring item height, remain recognizable as a potion, and avoid clipping or crowding. Confirm the running Mana process has no Dock presence.
 
 ## Scope
 
-No changes to the widget layout, full-color application icon, provider sprites, mana bars, motion timing, polling, credentials, activity detection, panel positioning, or tray interaction behavior beyond the dedicated icon, tooltip, and corrected quit label.
+No changes to the widget layout, full-color bundle metadata icon, provider sprites, mana bars, motion timing, polling, credentials, activity detection, panel positioning, or tray interaction behavior beyond the dedicated icon, tooltip, and corrected quit label. Mana remains exclusively a menu-bar widget and must not appear in the Dock.
