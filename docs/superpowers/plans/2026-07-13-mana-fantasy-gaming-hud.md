@@ -115,6 +115,14 @@ cp "$GENERATED_IMAGE" .superpowers/imagegen/mana-fantasy-frame-keyed.png
 
 Inspect it with `view_image` at original detail. Require one straight-on frame, friendly silver/gold/crystal fantasy treatment, no copied identity or forbidden content, flat outer green, and a plain dark center. If the exterior is approved but the center contains bright ornament, use one targeted built-in image edit that preserves the complete exterior and replaces only the center with a continuous unornamented dark-charcoal recess.
 
+If the overall object is too tall, has perspective, contains multiple frames, or later fails the 7.0:1 through 7.4:1 silhouette gate, perform one fresh built-in generation retry with no reference image. Reuse the complete approved prompt and add this exact correction:
+
+```text
+Composition correction: The prior object was too tall and only about 4:1. Produce an extremely long, thin fantasy status frame whose complete visible silhouette is 7.2:1. Extend the simple center rail horizontally, reduce the vertical height of crystals, leaves, wings, and end caps, and keep every ornament inside a total height no greater than 14% of the visible width. Preserve the same friendly silver, restrained gold, opal, and dark-center art direction.
+```
+
+After the retry, replace only `.superpowers/imagegen/mana-fantasy-frame-keyed.png`, re-inspect it, and repeat Steps 4-5. If the fresh retry still fails the silhouette gate, return `BLOCKED`; do not distort it or use a CLI fallback.
+
 - [ ] **Step 4: Remove only the outer chroma background**
 
 ```bash
