@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import tauriConfig from "../src-tauri/tauri.conf.json";
 import {
   INITIAL_ROSTER_HEIGHT,
   ROSTER_WIDTH,
@@ -8,10 +9,17 @@ import {
 } from "./window-layout";
 
 describe("permanent roster geometry", () => {
-  it("uses the expanded roster from startup", () => {
+  it("uses the wider expanded roster from startup", () => {
     expect({ width: ROSTER_WIDTH, height: INITIAL_ROSTER_HEIGHT }).toEqual({
-      width: 420,
+      width: 440,
       height: 175,
+    });
+    const mainWindow = tauriConfig.app.windows.find(
+      ({ label }) => label === "main",
+    );
+    expect(mainWindow).toMatchObject({
+      width: ROSTER_WIDTH,
+      height: INITIAL_ROSTER_HEIGHT,
     });
   });
 
@@ -19,7 +27,7 @@ describe("permanent roster geometry", () => {
     expect(
       rosterOrigin(
         { x: 500, y: 80 },
-        { width: 420, height: 175 },
+        { width: ROSTER_WIDTH, height: 175 },
         { x: 0, y: 0, width: 2880, height: 1800 },
         2,
       ),
@@ -30,11 +38,22 @@ describe("permanent roster geometry", () => {
     expect(
       rosterOrigin(
         { x: 2300, y: 1700 },
-        { width: 420, height: 210 },
+        { width: ROSTER_WIDTH, height: 210 },
         { x: 0, y: 0, width: 2880, height: 1800 },
         2,
       ),
-    ).toEqual({ x: 2040, y: 1380 });
+    ).toEqual({ x: 2000, y: 1380 });
+  });
+
+  it("reclamps an old 420px right-edge position for the wider roster", () => {
+    expect(
+      rosterOrigin(
+        { x: 2040, y: 80 },
+        { width: ROSTER_WIDTH, height: 210 },
+        { x: 0, y: 0, width: 2880, height: 1800 },
+        2,
+      ),
+    ).toEqual({ x: 2000, y: 80 });
   });
 });
 

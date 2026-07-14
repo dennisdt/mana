@@ -1,4 +1,4 @@
-export const ROSTER_WIDTH = 420;
+export const ROSTER_WIDTH = 440;
 export const INITIAL_ROSTER_HEIGHT = 175;
 
 type Point = { x: number; y: number };
