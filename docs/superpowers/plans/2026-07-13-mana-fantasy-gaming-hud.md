@@ -545,21 +545,41 @@ describe("fantasy gaming HUD stylesheet", () => {
     expect(styles).toContain('url("/hud/mana-bar-frame.png")');
     expect(styles).not.toContain("boss-bar-");
     expect(styles).not.toContain("background-size: 4px 4px");
+    expect(styles).not.toMatch(/\.track::after\s*\{[^}]*mana-bar-frame/s);
   });
 
   it("declares fixed frame and live-core geometry", () => {
     expect(styles).toContain("--meter-width: 144px");
     expect(styles).toContain("--meter-height: 20px");
+    expect(styles).toContain("--meter-inset-x: 14px");
+    expect(styles).toContain("--meter-inset-y: 6px");
     expect(styles).toContain("--meter-channel-width: 116px");
     expect(styles).toContain("--meter-channel-height: 8px");
+    expect(styles).toMatch(/\.fill\s*\{[^}]*top:\s*var\(--meter-inset-y\)[^}]*left:\s*var\(--meter-inset-x\)[^}]*max-width:\s*var\(--meter-channel-width\)/s);
     expect(styles).toContain('.fill[data-empty="true"]');
   });
 
   it("keeps stale text readable and covers reduced motion", () => {
     expect(styles).not.toMatch(/\.stale\s*\{[^}]*\bfilter\s*:/s);
+    expect(styles).not.toMatch(/\.stale\s*\{[^}]*\bopacity\s*:/s);
+    expect(styles).not.toContain(".stale .sprite");
     expect(styles).toContain(".stale .fill");
+    expect(styles).toContain("animation: magic-glint 3.2s ease-in-out infinite");
     expect(styles).toContain("@media (prefers-reduced-motion: reduce)");
     expect(styles).toContain(".provider-card[data-working] .familiar-slot::after");
+    const reducedMotion = styles.slice(
+      styles.indexOf("@media (prefers-reduced-motion: reduce)"),
+    );
+    expect(reducedMotion).toContain(".sprite");
+    expect(reducedMotion).toContain(".fill::before");
+    expect(reducedMotion).toContain(".provider-card[data-working] .familiar-slot::after");
+    expect(reducedMotion).toContain(".provider-card[data-working] .activity-signal");
+    expect(reducedMotion).toContain("animation: none");
+  });
+
+  it("preserves intrinsic card height for native content measurement", () => {
+    expect(styles).toMatch(/#root\s*\{[^}]*flex-direction:\s*column/s);
+    expect(styles).not.toMatch(/#card\s*\{[^}]*\bflex:\s*1(?:\s|;)/s);
   });
 });
 ```
@@ -618,6 +638,7 @@ body {
   position: relative;
   isolation: isolate;
   display: flex;
+  flex-direction: column;
   box-sizing: border-box;
   width: 100%;
   height: 100vh;
@@ -662,7 +683,6 @@ body {
   position: relative;
   z-index: 1;
   display: flex;
-  flex: 1;
   flex-direction: column;
   box-sizing: border-box;
   width: 100%;
@@ -785,6 +805,8 @@ body {
 
 .head .plan {
   min-width: 0;
+  overflow: hidden;
+  text-overflow: clip;
 }
 
 .activity-signal {
@@ -1020,7 +1042,7 @@ Create `.superpowers/visual-contract.html`:
     <title>mana fantasy visual contract</title>
   </head>
   <body>
-    <div id="root">
+    <div id="root" data-tauri-drag-region="deep">
       <div id="card">
         <section class="provider-card claude" data-working>
           <div class="familiar-slot"><div class="sprite clawd" data-state="working"></div></div>
@@ -1056,14 +1078,16 @@ Start:
 npm run dev -- --host 127.0.0.1 --port 1431 --strictPort
 ```
 
-Open the harness with the in-app browser at 440px width. Require:
+Open `http://127.0.0.1:1431/.superpowers/visual-contract.html` in the in-app browser with an explicit `440x220` viewport. Require:
 
 ```javascript
 const tracks = [...document.querySelectorAll(".track")];
 const values = [...document.querySelectorAll(".row .val")];
 const fills = [...document.querySelectorAll(".fill")];
 ({
+  path: location.pathname,
   rootWidth: document.querySelector("#root").getBoundingClientRect().width,
+  cardHeight: document.querySelector("#card").scrollHeight,
   tracks: tracks.map((element) => {
     const rect = element.getBoundingClientRect();
     return [rect.width, rect.height];
@@ -1088,7 +1112,7 @@ const fills = [...document.querySelectorAll(".fill")];
 });
 ```
 
-Expected: root 440; every track `[144, 20]`; values fit; no overflow; frame URL ends in `mana-bar-frame.png`; every fill starts at `[14, 6]`, is 8px high, and remains inside the core boundary; `codexLabels` is exactly `["Weekly"]`; the empty fill has opacity `0` and shadow `none`. Also compare label/track/value rectangles and require both declared 8px gaps without overlap. Capture normal and reduced-motion screenshots. Confirm fantasy details remain visible, the core stays inside the recess from 0%-100%, all non-empty glints use `magic-glint` with `3.2s` and identical timing, toggling `data-working` does not change track/fill rectangles or glint, stale text retains normal color/opacity, and reduced motion disables glint, sprites, signal pulse, and portrait pulse while keeping static non-empty energy visible.
+Expected: path is exactly `/.superpowers/visual-contract.html`; root 440; `cardHeight` is intrinsic content height and remains below the 220px viewport rather than stretching to `100vh`; every track `[144, 20]`; values fit; no overflow; frame URL ends in `mana-bar-frame.png`; every fill starts at `[14, 6]`, is 8px high, and remains inside the core boundary; `codexLabels` is exactly `["Weekly"]`; the empty fill has opacity `0` and shadow `none`. The frame stays on the `.track` background below `.fill` because its center is opaque; never move it to an upper pseudo-element. Also compare label/track/value rectangles and require both declared 8px gaps without overlap. Capture normal and reduced-motion screenshots at a viewport height set to `Math.ceil(cardHeight + 2)` so the image matches native content sizing. Confirm fantasy details remain visible, the core stays inside the recess from 0%-100%, all non-empty glints use `magic-glint` with `3.2s` and identical timing, toggling `data-working` does not change track/fill rectangles or glint, stale label/value and sprite retain normal color/opacity, and reduced motion disables glint, sprites, signal pulse, and portrait pulse while keeping static non-empty energy visible. The harness must retain `data-tauri-drag-region="deep"` parity; perform the actual drag smoke check in Task 5 native QA.
 
 - [ ] **Step 7: Clean scratch and commit visual integration**
 
