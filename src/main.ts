@@ -41,6 +41,15 @@ function updateSpriteFrames(now: number = performance.now()): void {
   });
 }
 
+function listenForSpriteMotionPreference(): void {
+  const update = () => updateSpriteFrames();
+  if (typeof spriteMotionPreference.addEventListener === "function") {
+    spriteMotionPreference.addEventListener("change", update);
+  } else {
+    spriteMotionPreference.addListener(update);
+  }
+}
+
 function updateSprites(): void {
   for (const provider of ["claude", "codex"]) {
     document
@@ -183,6 +192,6 @@ void invoke<Activity>("get_activity").then((a) => {
 
 for (const provider of ["claude", "codex"]) renderProvider(provider);
 
-spriteMotionPreference.addEventListener("change", () => updateSpriteFrames());
+listenForSpriteMotionPreference();
 setInterval(updateSpriteFrames, SPRITE_TICK_MS);
 setInterval(tick, 1000);

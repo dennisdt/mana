@@ -37,4 +37,11 @@ describe("sprite animation runtime", () => {
     expect(mainSource).toContain("element.dataset.frame = frame");
     expect(mainSource).toContain("setInterval(updateSpriteFrames, SPRITE_TICK_MS)");
   });
+
+  it("supports older WebKit motion preference listeners", () => {
+    expect(mainSource).toContain(
+      'typeof spriteMotionPreference.addEventListener === "function"',
+    );
+    expect(mainSource).toContain("spriteMotionPreference.addListener");
+  });
 });
