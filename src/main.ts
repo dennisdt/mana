@@ -8,6 +8,7 @@ import {
 } from "@tauri-apps/api/window";
 import { fmtAge, fmtCountdown, manaLeft, planLabel } from "./format";
 import { meterFillPixels } from "./meter";
+import { SPRITE_TICK_MS, spriteFrameAt } from "./sprite-animation";
 import { cardHtml, type Snapshot } from "./view";
 import {
   ROSTER_WIDTH,
@@ -23,11 +24,21 @@ const snapshots = new Map<string, Snapshot>();
 const activity: Record<string, boolean> = { claude: false, codex: false };
 let hovering = false;
 let moving = false;
+const spriteMotionPreference = window.matchMedia("(prefers-reduced-motion: reduce)");
 
 function spriteState(provider: string): string {
   if (moving || hovering) return "hover";
   if (activity[provider]) return "working";
   return "idle";
+}
+
+function updateSpriteFrames(now: number = performance.now()): void {
+  document.querySelectorAll<HTMLElement>(".sprite").forEach((element) => {
+    const frame = String(
+      spriteFrameAt(now, element.dataset.state, spriteMotionPreference.matches),
+    );
+    if (element.dataset.frame !== frame) element.dataset.frame = frame;
+  });
 }
 
 function updateSprites(): void {
@@ -41,6 +52,7 @@ function updateSprites(): void {
         element.dataset.state = spriteState(provider);
       });
   }
+  updateSpriteFrames();
 }
 
 function applyData(card: HTMLElement, s: Snapshot): void {
@@ -171,4 +183,6 @@ void invoke<Activity>("get_activity").then((a) => {
 
 for (const provider of ["claude", "codex"]) renderProvider(provider);
 
+spriteMotionPreference.addEventListener("change", () => updateSpriteFrames());
+setInterval(updateSpriteFrames, SPRITE_TICK_MS);
 setInterval(tick, 1000);

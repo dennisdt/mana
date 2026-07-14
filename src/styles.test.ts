@@ -21,10 +21,18 @@ describe("fantasy gaming HUD stylesheet", () => {
     expect(styles).not.toContain(".familiar-slot::after");
     expect(styles).not.toContain("image-rendering: pixelated");
     expect(styles).toMatch(/#card section\s*\{[^}]*grid-template-columns:\s*60px minmax\(0, 1fr\)/s);
-    expect(styles).toMatch(/\.sprite\s*\{[^}]*width:\s*56px[^}]*height:\s*56px[^}]*background-size:\s*224px 168px[^}]*animation:\s*sprite-run 1\.15s steps\(4\) infinite/s);
-    expect(styles).toMatch(/\.sprite\[data-state="working"\]\s*\{[^}]*background-position-y:\s*-56px[^}]*animation-duration:\s*0\.68s/s);
-    expect(styles).toMatch(/\.sprite\[data-state="hover"\]\s*\{[^}]*background-position-y:\s*-112px[^}]*animation-duration:\s*0\.82s/s);
-    expect(styles).toMatch(/@keyframes sprite-run\s*\{[^}]*background-position-x:\s*0[^}]*\}[^}]*background-position-x:\s*-224px/s);
+    const spriteRule = styles.match(/\.sprite\s*\{([^}]*)\}/s)?.[1] ?? "";
+    expect(spriteRule).toMatch(/width:\s*56px/);
+    expect(spriteRule).toMatch(/height:\s*56px/);
+    expect(spriteRule).toMatch(/background-size:\s*224px 168px/);
+    expect(spriteRule).not.toContain("animation:");
+    expect(styles).toMatch(/\.sprite\[data-frame="0"\]\s*\{[^}]*background-position-x:\s*0/s);
+    expect(styles).toMatch(/\.sprite\[data-frame="1"\]\s*\{[^}]*background-position-x:\s*-56px/s);
+    expect(styles).toMatch(/\.sprite\[data-frame="2"\]\s*\{[^}]*background-position-x:\s*-112px/s);
+    expect(styles).toMatch(/\.sprite\[data-frame="3"\]\s*\{[^}]*background-position-x:\s*-168px/s);
+    expect(styles).toMatch(/\.sprite\[data-state="working"\]\s*\{[^}]*background-position-y:\s*-56px/s);
+    expect(styles).toMatch(/\.sprite\[data-state="hover"\]\s*\{[^}]*background-position-y:\s*-112px/s);
+    expect(styles).not.toContain("sprite-run");
   });
 
   it("declares fixed frame and live-core geometry", () => {
@@ -48,7 +56,8 @@ describe("fantasy gaming HUD stylesheet", () => {
     const reducedMotion = styles.slice(
       styles.indexOf("@media (prefers-reduced-motion: reduce)"),
     );
-    expect(reducedMotion).toContain(".sprite");
+    expect(reducedMotion).toContain(".sprite[data-frame]");
+    expect(reducedMotion).toContain("background-position-x: 0");
     expect(reducedMotion).toContain(".fill::before");
     expect(reducedMotion).toContain(".provider-card[data-working] .activity-signal");
     expect(reducedMotion).toContain("animation: none");

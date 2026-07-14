@@ -15,6 +15,7 @@ describe("cardHtml", () => {
     const html = cardHtml(weeklyOnly, "codex");
     expect(html).toContain('class="sprite codex-mage"');
     expect(html).toContain('data-provider="codex"');
+    expect(html).toContain('data-state="idle" data-frame="0"');
     expect(html).toContain('class="lbl">Weekly</span>');
     expect(html).toContain('class="track codex"');
     expect(html).toContain('class="fill" data-empty="false" style="width:52px"');
@@ -35,6 +36,7 @@ describe("cardHtml", () => {
   it("keeps the provider roster shell when data is absent", () => {
     const html = cardHtml(undefined, "claude");
     expect(html).toContain('class="sprite claude-mage"');
+    expect(html).toContain('data-state="idle" data-frame="0"');
     expect(html).toContain("Claude");
     expect(html).toContain("log in via the claude CLI");
   });

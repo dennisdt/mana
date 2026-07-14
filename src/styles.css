@@ -291,7 +291,22 @@ body {
   height: 56px;
   background-repeat: no-repeat;
   background-size: 224px 168px;
-  animation: sprite-run 1.15s steps(4) infinite;
+}
+
+.sprite[data-frame="0"] {
+  background-position-x: 0;
+}
+
+.sprite[data-frame="1"] {
+  background-position-x: -56px;
+}
+
+.sprite[data-frame="2"] {
+  background-position-x: -112px;
+}
+
+.sprite[data-frame="3"] {
+  background-position-x: -168px;
 }
 
 .sprite.claude-mage {
@@ -314,12 +329,10 @@ body {
 
 .sprite[data-state="working"] {
   background-position-y: -56px;
-  animation-duration: 0.68s;
 }
 
 .sprite[data-state="hover"] {
   background-position-y: -112px;
-  animation-duration: 0.82s;
 }
 
 .stale .fill:not([data-empty="true"]) {
@@ -359,17 +372,11 @@ body {
   }
 }
 
-@keyframes sprite-run {
-  from {
+@media (prefers-reduced-motion: reduce) {
+  .sprite[data-frame] {
     background-position-x: 0;
   }
-  to {
-    background-position-x: -224px;
-  }
-}
 
-@media (prefers-reduced-motion: reduce) {
-  .sprite,
   .fill::before,
   .provider-card[data-working] .activity-signal {
     animation: none;
