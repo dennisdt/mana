@@ -4,9 +4,9 @@ import { SPRITE_FRAME_DURATION_MS, spriteFrameAt } from "./sprite-animation";
 
 describe("sprite frame timing", () => {
   it.each([
-    ["idle", 287.5],
-    ["working", 170],
-    ["hover", 205],
+    ["idle", 575],
+    ["working", 340],
+    ["hover", 410],
   ] as const)("advances the %s row through four frames", (state, frameDuration) => {
     expect(SPRITE_FRAME_DURATION_MS[state]).toBe(frameDuration);
     expect(spriteFrameAt(0, state, false)).toBe(0);
@@ -24,8 +24,8 @@ describe("sprite frame timing", () => {
   });
 
   it("uses idle timing for missing or invalid DOM state", () => {
-    expect(spriteFrameAt(287.5, undefined, false)).toBe(1);
-    expect(spriteFrameAt(287.5, "unknown", false)).toBe(1);
+    expect(spriteFrameAt(575, undefined, false)).toBe(1);
+    expect(spriteFrameAt(575, "unknown", false)).toBe(1);
   });
 });
 

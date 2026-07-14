@@ -1,7 +1,7 @@
 export const SPRITE_FRAME_DURATION_MS = {
-  idle: 287.5,
-  working: 170,
-  hover: 205,
+  idle: 575,
+  working: 340,
+  hover: 410,
 } as const;
 
 export const SPRITE_TICK_MS = 50;
