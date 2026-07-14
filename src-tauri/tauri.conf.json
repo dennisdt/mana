@@ -23,7 +23,8 @@
         "visible": false,
         "alwaysOnTop": true,
         "resizable": false,
-        "acceptFirstMouse": true
+        "acceptFirstMouse": true,
+        "backgroundThrottling": "disabled"
       }
     ],
     "security": {

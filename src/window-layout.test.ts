@@ -23,6 +23,16 @@ describe("permanent roster geometry", () => {
     });
   });
 
+  it("keeps the main webview rendering while the panel is inactive", () => {
+    const mainWindow = tauriConfig.app.windows.find(
+      ({ label }) => label === "main",
+    );
+
+    expect(mainWindow).toMatchObject({
+      backgroundThrottling: "disabled",
+    });
+  });
+
   it("keeps an origin that fits the active work area", () => {
     expect(
       rosterOrigin(
