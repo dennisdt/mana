@@ -42,9 +42,18 @@ The mana glint delay is the sum of the provider and row offsets. The working-sta
 
 `prefers-reduced-motion: reduce` continues to freeze every sprite on frame zero and disable mana glints and activity pulses. Phase offsets must not create timers when reduced motion is enabled.
 
+## App Identity
+
+- The visible product name is exactly `Mana`; the internal package and crate names remain lowercase `mana`.
+- The bundle identifier remains `com.vantasoft.mana`.
+- The approved 1254x1254 potion artwork becomes the canonical project icon source and is committed to `src-tauri/icons/mana-potion-master.png`.
+- The potion's opaque blue-sky and periwinkle-cloud fantasy background is intentional. Do not remove it or replace it with transparency or a flat green field.
+- Generate the complete platform icon set from the canonical source with the Tauri icon command so every size shares the same crop and composition.
+- Release the combined motion and identity update as version `0.4.4`.
+
 ## Scope
 
-No sprite assets, mana-bar assets, layout, provider colors, polling, activity detection, window behavior, or release metadata change.
+No sprite assets, mana-bar assets, layout, provider colors, polling, activity detection, window behavior, bundle identifier, internal package name, or crate name change. Release metadata changes are limited to the visible `Mana` name, the approved icon, and version `0.4.4`.
 
 ## Verification
 
@@ -52,4 +61,5 @@ No sprite assets, mana-bar assets, layout, provider colors, polling, activity de
 - Prove phase-adjusted next-boundary delays match the displayed frame sequence.
 - Verify unknown providers retain the zero-phase fallback.
 - Verify the stylesheet declares provider and row offsets, combines them for glints, applies the provider offset to activity pulses, and preserves reduced-motion disabling.
+- Verify the canonical icon is square, generated small icons remain recognizable, the packaged bundle is named `Mana.app`, and its metadata reports `Mana`, `com.vantasoft.mana`, and `0.4.4`.
 - Run the complete frontend and Rust suites, production frontend build, native bundle build, and installed executable hash comparison.
