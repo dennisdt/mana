@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import mainSource from "./main.ts?raw";
-import { SPRITE_FRAME_DURATION_MS, spriteFrameAt } from "./sprite-animation";
+import {
+  SPRITE_FRAME_DURATION_MS,
+  spriteFrameAt,
+  spriteFrameDelayAt,
+} from "./sprite-animation";
 
 describe("sprite frame timing", () => {
   it.each([
@@ -27,15 +31,30 @@ describe("sprite frame timing", () => {
     expect(spriteFrameAt(575, undefined, false)).toBe(1);
     expect(spriteFrameAt(575, "unknown", false)).toBe(1);
   });
+
+  it.each([
+    ["idle", 0, 575],
+    ["idle", 200, 375],
+    ["idle", 575, 575],
+    ["working", 300, 40],
+    ["hover", 409.5, 0.5],
+  ] as const)("schedules the next %s frame boundary without polling", (state, elapsed, delay) => {
+    expect(spriteFrameDelayAt(elapsed, state, false)).toBe(delay);
+  });
+
+  it("does not schedule new frames when reduced motion is enabled", () => {
+    expect(spriteFrameDelayAt(999, "idle", true)).toBeUndefined();
+  });
 });
 
 describe("sprite animation runtime", () => {
-  it("schedules DOM frame updates independently of CSS animation", () => {
+  it("schedules DOM frame updates at exact atlas-frame boundaries", () => {
     expect(mainSource).toContain(
       'window.matchMedia("(prefers-reduced-motion: reduce)")',
     );
     expect(mainSource).toContain("element.dataset.frame = frame");
-    expect(mainSource).toContain("setInterval(updateSpriteFrames, SPRITE_TICK_MS)");
+    expect(mainSource).toContain("setTimeout(runSpriteFrameUpdate, delay)");
+    expect(mainSource).not.toContain("setInterval(updateSpriteFrames, SPRITE_TICK_MS)");
   });
 
   it("supports older WebKit motion preference listeners", () => {

@@ -8,7 +8,7 @@ import {
 } from "@tauri-apps/api/window";
 import { fmtAge, fmtCountdown, manaLeft, planLabel } from "./format";
 import { meterFillPixels } from "./meter";
-import { SPRITE_TICK_MS, spriteFrameAt } from "./sprite-animation";
+import { spriteFrameAt, spriteFrameDelayAt } from "./sprite-animation";
 import { cardHtml, type Snapshot } from "./view";
 import {
   ROSTER_WIDTH,
@@ -25,6 +25,7 @@ const activity: Record<string, boolean> = { claude: false, codex: false };
 let hovering = false;
 let moving = false;
 const spriteMotionPreference = window.matchMedia("(prefers-reduced-motion: reduce)");
+let spriteFrameTimer: ReturnType<typeof setTimeout> | undefined;
 
 function spriteState(provider: string): string {
   if (moving || hovering) return "hover";
@@ -41,8 +42,29 @@ function updateSpriteFrames(now: number = performance.now()): void {
   });
 }
 
+function scheduleSpriteFrameUpdate(now: number = performance.now()): void {
+  clearTimeout(spriteFrameTimer);
+  const delays = Array.from(document.querySelectorAll<HTMLElement>(".sprite"), (element) =>
+    spriteFrameDelayAt(now, element.dataset.state, spriteMotionPreference.matches),
+  ).filter((delay): delay is number => delay !== undefined);
+  const delay = Math.min(...delays);
+  if (!Number.isFinite(delay)) return;
+  spriteFrameTimer = setTimeout(runSpriteFrameUpdate, delay);
+}
+
+function runSpriteFrameUpdate(): void {
+  const now = performance.now();
+  updateSpriteFrames(now);
+  scheduleSpriteFrameUpdate(now);
+}
+
+function syncSpriteFrames(now: number = performance.now()): void {
+  updateSpriteFrames(now);
+  scheduleSpriteFrameUpdate(now);
+}
+
 function listenForSpriteMotionPreference(): void {
-  const update = () => updateSpriteFrames();
+  const update = () => syncSpriteFrames();
   if (typeof spriteMotionPreference.addEventListener === "function") {
     spriteMotionPreference.addEventListener("change", update);
   } else {
@@ -61,7 +83,7 @@ function updateSprites(): void {
         element.dataset.state = spriteState(provider);
       });
   }
-  updateSpriteFrames();
+  syncSpriteFrames();
 }
 
 function applyData(card: HTMLElement, s: Snapshot): void {
@@ -193,5 +215,5 @@ void invoke<Activity>("get_activity").then((a) => {
 for (const provider of ["claude", "codex"]) renderProvider(provider);
 
 listenForSpriteMotionPreference();
-setInterval(updateSpriteFrames, SPRITE_TICK_MS);
+syncSpriteFrames();
 setInterval(tick, 1000);
