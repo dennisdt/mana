@@ -27,7 +27,7 @@ Use direction A: a filled potion silhouette with a clear liquid cutout. The silh
 - Load the dedicated PNG in Rust instead of cloning `app.default_window_icon()`.
 - Pass the image to `TrayIconBuilder` and set `.icon_as_template(true)`.
 - macOS owns the rendered foreground color so the glyph adapts automatically to light, dark, active, and inactive menu-bar appearances.
-- Mana remains an accessory application with `ActivationPolicy::Accessory`; the running widget must never create a Dock icon.
+- Mana is declared as an agent application with `LSUIElement = true` in the packaged `Info.plist` and retains `ActivationPolicy::Accessory` at runtime. LaunchServices must never register the running widget as a Dock application.
 - Set the tray tooltip to `Mana`.
 - Keep the existing left-click menu behavior, window toggle behavior, and non-activating panel behavior unchanged.
 - Change the menu command label from `Quit mana` to `Quit Mana`.
@@ -42,11 +42,11 @@ Use direction A: a filled potion silhouette with a clear liquid cutout. The silh
 ## Verification
 
 - Add a focused Rust test or build-time assertion for the dedicated tray image path and template configuration.
-- Add a regression assertion that the runtime retains `ActivationPolicy::Accessory`.
+- Add regression assertions that the bundle source declares `LSUIElement = true` and the runtime retains `ActivationPolicy::Accessory`.
 - Verify the PNG is 36x36 RGBA, has transparent corner pixels, contains a centered non-empty silhouette, and does not fill the complete square.
 - Verify production frontend and native builds succeed and all frontend and Rust tests pass.
 - Install `/Applications/Mana.app`, confirm bundle metadata reports `Mana`, `com.vantasoft.mana`, and `0.4.5`, and compare built/installed executable and icon hashes.
-- Relaunch with CuaDriver and visually inspect the real menu bar: the icon must have no colored square, match neighboring item height, remain recognizable as a potion, and avoid clipping or crowding. Confirm the running Mana process has no Dock presence.
+- Relaunch with CuaDriver and visually inspect the real menu bar: the icon must have no colored square, match neighboring item height, remain recognizable as a potion, and avoid clipping or crowding. Confirm the running Mana process has no Dock presence and that the installed `Info.plist` contains `LSUIElement = true`.
 
 ## Scope
 

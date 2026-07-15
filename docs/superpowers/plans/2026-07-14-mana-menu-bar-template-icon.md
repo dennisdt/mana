@@ -14,7 +14,7 @@
 - Runtime tray PNG is exactly 36x36 RGBA on a transparent canvas.
 - Use `.icon_as_template(true)` so macOS owns the foreground color.
 - Keep `src-tauri/icons/mana-potion-master.png` and every full-color application icon unchanged.
-- Keep `ActivationPolicy::Accessory`; the running Mana widget must never appear in the Dock.
+- Declare `LSUIElement = true` in the packaged bundle and keep `ActivationPolicy::Accessory`; the running Mana widget must never appear in the Dock.
 - Visible name remains `Mana`; npm package and Rust crate names remain `mana`; bundle identifier remains `com.vantasoft.mana`.
 - Release version is exactly `0.4.5` in npm, Cargo, and Tauri metadata.
 - Keep widget layout, provider artwork, mana bars, motion, polling, activity detection, panel positioning, and tray interaction behavior unchanged.
@@ -125,18 +125,59 @@ git add package.json package-lock.json src/branding.test.ts src-tauri/Cargo.toml
 git commit -m "chore: release Mana 0.4.5"
 ```
 
-### Task 3: Final Integrated Review
+### Task 3: Launch-Time Dock Suppression
+
+**Files:**
+- Create: `src-tauri/Info.plist`
+- Modify: `src/branding.test.ts`
+
+**Interfaces:**
+- Produces: a packaged `Info.plist` containing Boolean `LSUIElement = true`.
+- Preserves: runtime `ActivationPolicy::Accessory` as the second enforcement layer.
+
+- [ ] **Step 1: Add a failing bundle-policy assertion**
+
+Extend `src/branding.test.ts` to read `src-tauri/Info.plist` and require `<key>LSUIElement</key>` immediately followed by `<true/>`. Retain the source assertion for `ActivationPolicy::Accessory`.
+
+- [ ] **Step 2: Run the focused test and confirm failure**
+
+Run: `npm test -- --run src/branding.test.ts`
+
+Expected: FAIL because `src-tauri/Info.plist` does not exist.
+
+- [ ] **Step 3: Add the macOS agent-application property list**
+
+Create a valid XML property list at `src-tauri/Info.plist` whose dictionary contains only the Boolean `LSUIElement` key set to true. Tauri merges this file into its generated bundle property list.
+
+- [ ] **Step 4: Build and verify the merged bundle**
+
+Run: `npm test -- --run src/branding.test.ts && npm run tauri build`
+
+Verify: `/usr/libexec/PlistBuddy -c 'Print :LSUIElement' src-tauri/target/release/bundle/macos/Mana.app/Contents/Info.plist` prints `true` while name, identifier, and version remain `Mana`, `com.vantasoft.mana`, and `0.4.5`.
+
+- [ ] **Step 5: Install and verify Dock behavior**
+
+Install the rebuilt bundle, use CuaDriver to launch `com.vantasoft.mana`, and inspect the Dock accessibility tree. Mana must be absent while the Mana accessory process remains running and its menu-bar item is present.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add src/branding.test.ts src-tauri/Info.plist
+git commit -m "fix: keep Mana out of the Dock"
+```
+
+### Task 4: Final Integrated Review
 
 **Files:**
 - Review: every change since the implementation-plan baseline
 
 **Interfaces:**
-- Consumes: completed Tasks 1 and 2.
+- Consumes: completed Tasks 1, 2, and 3.
 - Produces: evidence that the installed release satisfies the complete approved menu-bar specification.
 
 - [ ] **Step 1: Review the complete diff**
 
-Check for accidental changes to full-color icons, tray callbacks, accessory activation policy, window behavior, package/crate names, or bundle identifier. Confirm the SVG and PNG represent the same filled-potion silhouette, the template flag is macOS-specific behavior provided by Tauri, and no Dock icon is introduced.
+Check for accidental changes to full-color icons, tray callbacks, `LSUIElement`, accessory activation policy, window behavior, package/crate names, or bundle identifier. Confirm the SVG and PNG represent the same filled-potion silhouette, the template flag is macOS-specific behavior provided by Tauri, and no Dock icon is introduced.
 
 - [ ] **Step 2: Run final verification**
 
