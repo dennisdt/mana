@@ -28,13 +28,13 @@ describe("Mana product identity", () => {
     expect(readme).toContain("bundle/macos/Mana.app /Applications/");
   });
 
-  it("keeps release version 0.4.4 synchronized", () => {
-    expect(packageJson.version).toBe("0.4.4");
-    expect(packageLock.version).toBe("0.4.4");
-    expect(packageLock.packages[""].version).toBe("0.4.4");
-    expect(tauriConfig.version).toBe("0.4.4");
-    expect(cargoToml).toMatch(/^version = "0\.4\.4"$/m);
-    expect(cargoLock).toMatch(/name = "mana"\nversion = "0\.4\.4"/);
+  it("keeps release version 0.4.5 synchronized", () => {
+    expect(packageJson.version).toBe("0.4.5");
+    expect(packageLock.version).toBe("0.4.5");
+    expect(packageLock.packages[""].version).toBe("0.4.5");
+    expect(tauriConfig.version).toBe("0.4.5");
+    expect(cargoToml).toMatch(/^version = "0\.4\.5"$/m);
+    expect(cargoLock).toMatch(/name = "mana"\nversion = "0\.4\.5"/);
   });
 
   it("preserves the approved square icon master", () => {
