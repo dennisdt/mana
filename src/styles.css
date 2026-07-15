@@ -239,15 +239,26 @@ body {
 }
 
 .row .val {
+  display: grid;
+  grid-template-columns: 4ch minmax(0, 1fr);
   min-width: 0;
+  column-gap: 8px;
   color: var(--ink-dim);
-  text-align: right;
 }
 
 .row .val b {
   color: var(--ink);
   font-size: 12px;
   font-weight: 680;
+}
+
+.row .pct {
+  text-align: right;
+}
+
+.row .cd {
+  min-width: 0;
+  text-align: left;
 }
 
 .track {

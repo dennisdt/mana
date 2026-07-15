@@ -78,6 +78,14 @@ describe("fantasy gaming HUD stylesheet", () => {
     );
   });
 
+  it("aligns percentages independently from reset-time length", () => {
+    expect(styles).toMatch(
+      /\.row \.val\s*\{[^}]*display:\s*grid[^}]*grid-template-columns:\s*4ch minmax\(0, 1fr\)[^}]*column-gap:\s*8px/s,
+    );
+    expect(styles).toMatch(/\.row \.pct\s*\{[^}]*text-align:\s*right/s);
+    expect(styles).toMatch(/\.row \.cd\s*\{[^}]*text-align:\s*left/s);
+  });
+
   it("preserves intrinsic card height for native content measurement", () => {
     expect(styles).toMatch(/#root\s*\{[^}]*flex-direction:\s*column/s);
     expect(styles).not.toMatch(/#card\s*\{[^}]*\bflex:\s*1(?:\s|;)/s);
