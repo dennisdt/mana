@@ -14,6 +14,7 @@ const html = readFileSync(new URL("index.html", root), "utf8");
 const readme = readFileSync(new URL("README.md", root), "utf8");
 const tauriSource = readFileSync(new URL("src-tauri/src/lib.rs", root), "utf8");
 const iconUrl = new URL("src-tauri/icons/mana-potion-master.png", root);
+const infoPlistUrl = new URL("src-tauri/Info.plist", root);
 
 describe("Mana product identity", () => {
   it("uses the visible Mana name while preserving internal identifiers", () => {
@@ -54,5 +55,11 @@ describe("Mana product identity", () => {
     expect(tauriSource).toContain('"Quit Mana"');
     expect(tauriSource).toContain("ActivationPolicy::Accessory");
     expect(tauriSource).not.toContain("app.default_window_icon()");
+  });
+
+  it("declares Mana as a macOS agent application", () => {
+    expect(existsSync(infoPlistUrl)).toBe(true);
+    const infoPlist = readFileSync(infoPlistUrl, "utf8");
+    expect(infoPlist).toMatch(/<key>LSUIElement<\/key>\s*<true\s*\/>/);
   });
 });
