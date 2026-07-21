@@ -90,4 +90,17 @@ describe("fantasy gaming HUD stylesheet", () => {
     expect(styles).toMatch(/#root\s*\{[^}]*flex-direction:\s*column/s);
     expect(styles).not.toMatch(/#card\s*\{[^}]*\bflex:\s*1(?:\s|;)/s);
   });
+
+  it("keeps hidden provider sections out of the grid layout", () => {
+    expect(styles).toMatch(
+      /#card section\[hidden\]\s*\{[^}]*display:\s*none/s,
+    );
+  });
+
+  it("adds provider divider spacing only between visible sections", () => {
+    expect(styles).toMatch(
+      /#card section:not\(\[hidden\]\) \+ section:not\(\[hidden\]\)\s*\{[^}]*padding-top:\s*14px[^}]*border-top:\s*1px solid var\(--line\)/s,
+    );
+    expect(styles).not.toMatch(/#card section \+ section\s*\{/);
+  });
 });

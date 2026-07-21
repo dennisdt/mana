@@ -43,12 +43,12 @@ pub fn fold_snapshot(
             fetched_at: now,
         },
         FetchResult::Failed => match prev {
-            Some(p) => UsageSnapshot {
+            Some(p) if !p.bars.is_empty() => UsageSnapshot {
                 authenticated: true,
                 status: "stale".into(),
                 ..p.clone()
             },
-            None => UsageSnapshot {
+            _ => UsageSnapshot {
                 provider: provider.into(),
                 bars: Vec::new(),
                 plan: None,
@@ -69,7 +69,9 @@ pub fn fold_snapshot(
 }
 
 fn credentials_are_valid(fields: &[&str]) -> bool {
-    fields.iter().all(|field| !field.trim().is_empty())
+    fields.iter().all(|field| {
+        !field.trim().is_empty() && reqwest::header::HeaderValue::from_str(field).is_ok()
+    })
 }
 
 async fn fetch_claude(client: &reqwest::Client, ua: &str) -> FetchResult {
@@ -220,6 +222,26 @@ mod tests {
     }
 
     #[test]
+    fn malformed_token_header_value_is_not_authenticated() {
+        assert!(!credentials_are_valid(&["token\r\ninjected: value"]));
+        assert!(!credentials_are_valid(&["token\0suffix"]));
+        assert!(credentials_are_valid(&["sk-ant-oat01-abc_123.def-456"]));
+    }
+
+    #[test]
+    fn malformed_codex_account_header_value_is_not_authenticated() {
+        assert!(!credentials_are_valid(&[
+            "token",
+            "account\r\ninjected: value"
+        ]));
+        assert!(!credentials_are_valid(&["token", "account\0suffix"]));
+        assert!(credentials_are_valid(&[
+            "eyJhbGciOiJSUzI1NiJ9.payload.signature",
+            "acc_123"
+        ]));
+    }
+
+    #[test]
     fn success_yields_ok() {
         let s = fold_snapshot(
             None,
@@ -250,6 +272,28 @@ mod tests {
         let s = fold_snapshot(None, "codex", FetchResult::Failed, 100);
         assert!(s.authenticated);
         assert_eq!(s.status, "absent");
+    }
+
+    #[test]
+    fn repeated_authenticated_failure_without_usage_history_remains_absent() {
+        let first = fold_snapshot(None, "codex", FetchResult::Failed, 100);
+        let second = fold_snapshot(Some(&first), "codex", FetchResult::Failed, 160);
+        assert!(second.authenticated);
+        assert_eq!(second.status, "absent");
+        assert!(second.bars.is_empty());
+        assert_eq!(second.plan, None);
+        assert_eq!(second.fetched_at, 160);
+    }
+
+    #[test]
+    fn unauthenticated_snapshot_then_failure_is_authenticated_absent() {
+        let unauthenticated = fold_snapshot(None, "codex", FetchResult::Unauthenticated, 100);
+        let failed = fold_snapshot(Some(&unauthenticated), "codex", FetchResult::Failed, 160);
+        assert!(failed.authenticated);
+        assert_eq!(failed.status, "absent");
+        assert!(failed.bars.is_empty());
+        assert_eq!(failed.plan, None);
+        assert_eq!(failed.fetched_at, 160);
     }
 
     #[test]
