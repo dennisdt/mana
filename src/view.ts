@@ -9,12 +9,17 @@ export type Bar = {
 };
 
 export type Snapshot = {
+  authenticated?: boolean;
   provider: string;
   bars: Bar[];
   plan: string | null;
   status: string;
   fetched_at: number;
 };
+
+export function providerIsVisible(snapshot: Snapshot | undefined): boolean {
+  return snapshot?.authenticated !== false;
+}
 
 function esc(value: string): string {
   return value.replace(/[&<>"']/g, (char) => `&#${char.charCodeAt(0)};`);

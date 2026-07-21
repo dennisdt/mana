@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import indexMarkup from "../index.html?raw";
-import { cardHtml } from "./view";
+import { cardHtml, providerIsVisible } from "./view";
 
 const weeklyOnly = {
   provider: "codex",
@@ -44,6 +44,18 @@ describe("cardHtml", () => {
   it("escapes limit labels", () => {
     const snapshot = { ...weeklyOnly, bars: [{ ...weeklyOnly.bars[0], label: '<script>' }] };
     expect(cardHtml(snapshot, "codex")).toContain("&#60;script&#62;");
+  });
+});
+
+describe("providerIsVisible", () => {
+  it("hides only explicitly unauthenticated providers", () => {
+    expect(providerIsVisible({ ...weeklyOnly, authenticated: false })).toBe(false);
+    expect(providerIsVisible({ ...weeklyOnly, authenticated: true, status: "absent", bars: [] })).toBe(true);
+  });
+
+  it("keeps startup and legacy snapshots visible", () => {
+    expect(providerIsVisible(undefined)).toBe(true);
+    expect(providerIsVisible(weeklyOnly)).toBe(true);
   });
 });
 

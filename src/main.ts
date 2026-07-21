@@ -13,7 +13,7 @@ import {
   spriteFrameDelayAt,
   spritePhaseCycles,
 } from "./sprite-animation";
-import { cardHtml, type Snapshot } from "./view";
+import { cardHtml, providerIsVisible, type Snapshot } from "./view";
 import {
   ROSTER_WIDTH,
   createSerialQueue,
@@ -130,6 +130,7 @@ function applyData(card: HTMLElement, s: Snapshot): void {
 function renderProvider(provider: string): void {
   const s = snapshots.get(provider);
   const card = document.getElementById(`card-${provider}`)!;
+  card.hidden = !providerIsVisible(s);
   const key =
     s && s.status !== "absent" && s.bars.length > 0
       ? s.bars.map((b) => `${b.id}:${b.label}`).join(",")
