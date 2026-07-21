@@ -68,10 +68,17 @@ pub fn fold_snapshot(
     }
 }
 
+fn credentials_are_valid(fields: &[&str]) -> bool {
+    fields.iter().all(|field| !field.trim().is_empty())
+}
+
 async fn fetch_claude(client: &reqwest::Client, ua: &str) -> FetchResult {
     let Some(creds) = creds::read_claude_creds() else {
         return FetchResult::Unauthenticated;
     };
+    if !credentials_are_valid(&[&creds.token]) {
+        return FetchResult::Unauthenticated;
+    }
     let response = match client
         .get("https://api.anthropic.com/api/oauth/usage")
         .bearer_auth(creds.token)
@@ -106,6 +113,9 @@ async fn fetch_codex(client: &reqwest::Client) -> FetchResult {
     let Some(c) = creds::read_codex_creds(&creds::codex_auth_path()) else {
         return FetchResult::Unauthenticated;
     };
+    if !credentials_are_valid(&[&c.access_token, &c.account_id]) {
+        return FetchResult::Unauthenticated;
+    }
     let response = match client
         .get("https://chatgpt.com/backend-api/wham/usage")
         .bearer_auth(c.access_token)
@@ -194,6 +204,19 @@ mod tests {
             used_percent: 26.0,
             resets_at: Some(1783712399),
         }
+    }
+
+    #[test]
+    fn blank_claude_token_is_not_authenticated() {
+        assert!(!credentials_are_valid(&[" "]));
+    }
+
+    #[test]
+    fn blank_codex_token_or_account_id_is_not_authenticated() {
+        assert!(!credentials_are_valid(&["token", ""]));
+        assert!(!credentials_are_valid(&["\t", "account"]));
+        assert!(!credentials_are_valid(&["token", "\n"]));
+        assert!(credentials_are_valid(&["token", "account"]));
     }
 
     #[test]
