@@ -17,12 +17,14 @@
         "title": "Mana",
         "width": 440,
         "height": 175,
+        "minWidth": 220,
+        "maxWidth": 1100,
         "transparent": true,
         "decorations": false,
         "shadow": false,
         "visible": false,
         "alwaysOnTop": true,
-        "resizable": false,
+        "resizable": true,
         "acceptFirstMouse": true,
         "backgroundThrottling": "disabled"
       }

@@ -332,6 +332,7 @@ body {
   height: 56px;
   background-repeat: no-repeat;
   background-size: 224px 168px;
+  image-rendering: pixelated;
 }
 
 .sprite[data-frame="0"] {
