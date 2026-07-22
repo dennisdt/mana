@@ -94,11 +94,21 @@ pub fn run() {
                 })
                 .build(app)?;
 
+            // Progression persists per-user, so the store loads after the
+            // app handle exists (app_data_dir) rather than with the builder.
+            app.manage(progress::ProgressStore::load(app.handle()));
             poll::spawn_pollers(app.handle().clone());
             activity::spawn_activity_watcher(app.handle().clone());
+            progress::spawn_progress_watcher(app.handle().clone());
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![poll::get_snapshots, activity::get_activity])
+        .invoke_handler(tauri::generate_handler![
+            poll::get_snapshots,
+            activity::get_activity,
+            progress::get_progress,
+            progress::rank_up,
+            progress::prestige
+        ])
         .run(tauri::generate_context!())
         .expect("error while running mana");
 }

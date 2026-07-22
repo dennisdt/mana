@@ -52,7 +52,7 @@ pub fn prestige_eligible(rank: usize) -> bool {
 /// incremental: byte offsets for append-only Claude transcripts, and last
 /// seen cumulative totals for Codex sessions (whose `token_count` events
 /// carry running totals, not deltas).
-#[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Default, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct TallyState {
     pub total_tokens: u64,
     pub claude_offsets: std::collections::HashMap<String, u64>, // path -> consumed byte offset
@@ -171,6 +171,199 @@ pub fn scan_codex_dir(dir: &std::path::Path, state: &mut TallyState) {
     }
 }
 
+/// The whole persisted progression: cosmetic choices (rank/prestige), the
+/// prestige XP baseline, and the tally cursors. Saved as one document so the
+/// on-disk snapshot is always internally consistent — tokens and the offsets
+/// that produced them can never diverge.
+#[derive(Debug, Default, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ProgressState {
+    pub rank: usize,
+    pub prestige: u32,
+    pub prestige_token_floor: u64,
+    pub tally: TallyState,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct LevelProgress {
+    pub current: u64,
+    pub needed: u64,
+}
+
+/// Everything the frontend renders, derived on demand — the UI never does
+/// progression math of its own.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct Progress {
+    pub xp: u64,
+    pub level: u32,
+    pub rank: usize,
+    pub tier: String,
+    pub prestige: u32,
+    pub rank_up_eligible: bool,
+    pub prestige_eligible: bool,
+    pub level_progress: LevelProgress,
+}
+
+/// XP since the last prestige: earlier tokens stay in the lifetime tally but
+/// no longer count toward levels.
+fn effective_xp(state: &ProgressState) -> u64 {
+    state
+        .tally
+        .total_tokens
+        .saturating_sub(state.prestige_token_floor)
+        / TOKENS_PER_XP
+}
+
+pub fn progress_view(state: &ProgressState) -> Progress {
+    let xp = effective_xp(state);
+    let level = level_for_xp(xp, state.prestige);
+    let floor = xp_for_level(level, state.prestige);
+    let needed = xp_for_level(level + 1, state.prestige).saturating_sub(floor);
+    Progress {
+        xp,
+        level,
+        rank: state.rank,
+        tier: TIERS[state.rank.min(TIERS.len() - 1)].to_string(),
+        prestige: state.prestige,
+        rank_up_eligible: rank_up_eligible(level, state.rank),
+        prestige_eligible: prestige_eligible(state.rank),
+        level_progress: LevelProgress {
+            current: xp - floor,
+            needed,
+        },
+    }
+}
+
+/// Advances exactly one tier. Validation lives here, not in the UI: the
+/// frontend button is cosmetic and a stale or forged invoke must not skip
+/// gates.
+pub fn try_rank_up(state: &mut ProgressState) -> Result<(), String> {
+    let level = level_for_xp(effective_xp(state), state.prestige);
+    if !rank_up_eligible(level, state.rank) {
+        return Err(format!("level {level} has not reached the next rank gate"));
+    }
+    state.rank += 1;
+    Ok(())
+}
+
+/// Prestige: back to naked, curve steepens, and the token floor moves to
+/// "now" so only future tokens level the next cycle.
+pub fn try_prestige(state: &mut ProgressState) -> Result<(), String> {
+    if !prestige_eligible(state.rank) {
+        return Err("prestige requires the final tier".into());
+    }
+    state.prestige += 1;
+    state.rank = 0;
+    state.prestige_token_floor = state.tally.total_tokens;
+    Ok(())
+}
+
+pub fn save_progress(path: &std::path::Path, state: &ProgressState) -> std::io::Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let json = serde_json::to_vec(state)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    std::fs::write(path, json)
+}
+
+/// Missing or corrupt file → Default. Progression is cosmetic, so starting
+/// fresh beats refusing to boot; the next scan rebuilds the tally anyway.
+pub fn load_progress(path: &std::path::Path) -> ProgressState {
+    std::fs::read(path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or_default()
+}
+
+pub struct ProgressStore(pub std::sync::Mutex<ProgressState>);
+
+impl ProgressStore {
+    /// Loads persisted progression for `app.manage()` at startup.
+    pub fn load(app: &tauri::AppHandle) -> Self {
+        let state = store_path(app)
+            .map(|path| load_progress(&path))
+            .unwrap_or_default();
+        Self(std::sync::Mutex::new(state))
+    }
+}
+
+fn store_path(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
+    use tauri::Manager as _;
+    app.path()
+        .app_data_dir()
+        .ok()
+        .map(|dir| dir.join("progress.json"))
+}
+
+fn persist_and_emit(app: &tauri::AppHandle, state: &ProgressState, view: &Progress) {
+    use tauri::Emitter as _;
+    if let Some(path) = store_path(app) {
+        let _ = save_progress(&path, state);
+    }
+    let _ = app.emit("progress-update", view);
+}
+
+#[tauri::command]
+pub fn get_progress(store: tauri::State<'_, ProgressStore>) -> Progress {
+    progress_view(&store.0.lock().unwrap())
+}
+
+#[tauri::command]
+pub fn rank_up(
+    app: tauri::AppHandle,
+    store: tauri::State<'_, ProgressStore>,
+) -> Result<Progress, String> {
+    let state = &mut *store.0.lock().unwrap();
+    try_rank_up(state)?;
+    let view = progress_view(state);
+    persist_and_emit(&app, state, &view);
+    Ok(view)
+}
+
+#[tauri::command]
+pub fn prestige(
+    app: tauri::AppHandle,
+    store: tauri::State<'_, ProgressStore>,
+) -> Result<Progress, String> {
+    let state = &mut *store.0.lock().unwrap();
+    try_prestige(state)?;
+    let view = progress_view(state);
+    persist_and_emit(&app, state, &view);
+    Ok(view)
+}
+
+/// Rescans the real session directories every 60s (first tick immediate, so
+/// history reconciles at startup) and persists + emits only when the derived
+/// view changes — sub-XP token growth stays silent. Skipping the save on
+/// quiet ticks is safe because tokens and cursors are always saved together.
+pub fn spawn_progress_watcher(app: tauri::AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        use tauri::Manager as _;
+        let Some(home) = std::env::var_os("HOME").map(std::path::PathBuf::from) else {
+            return;
+        };
+        let claude_dir = home.join(".claude/projects");
+        let codex_dir = home.join(".codex/sessions");
+        let mut last: Option<Progress> = None;
+        let mut tick = tokio::time::interval(std::time::Duration::from_secs(60));
+        loop {
+            tick.tick().await;
+            let changed = {
+                let store = app.state::<ProgressStore>();
+                let state = &mut *store.0.lock().unwrap();
+                scan_claude_dir(&claude_dir, &mut state.tally);
+                scan_codex_dir(&codex_dir, &mut state.tally);
+                let view = progress_view(state);
+                (last.as_ref() != Some(&view)).then(|| (state.clone(), view))
+            };
+            if let Some((state, view)) = changed {
+                persist_and_emit(&app, &state, &view);
+                last = Some(view);
+            }
+        }
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -266,6 +459,58 @@ mod tests {
         writeln!(f, "{}", CODEX_EVENT_20K.replace("20000", "20900")).unwrap();
         scan_codex_dir(&dir, &mut state);
         assert_eq!(state.total_tokens, 20900); // delta 900, never 40900
+    }
+
+    fn state_with(tokens: u64, rank: usize, prestige: u32, floor: u64) -> ProgressState {
+        ProgressState {
+            rank,
+            prestige,
+            prestige_token_floor: floor,
+            tally: TallyState {
+                total_tokens: tokens,
+                ..Default::default()
+            },
+        }
+    }
+
+    #[test]
+    fn progress_view_derives_everything() {
+        // 800_000 tokens = 800 xp = level 10 at prestige 0
+        let v = progress_view(&state_with(800_000, 1, 0, 0));
+        assert_eq!(
+            (v.xp, v.level, v.tier, v.rank_up_eligible),
+            (800, 10, "plastic".into(), true) // rank 1 = plastic; gate for rank 2 (wood) is 10
+        );
+        assert_eq!(v.level_progress.needed, xp_for_level(11, 0) - xp_for_level(10, 0));
+    }
+
+    #[test]
+    fn rank_up_walks_one_tier_and_validates() {
+        let mut s = state_with(800_000, 0, 0, 0); // level 10: eligible for plastic AND wood
+        assert!(try_rank_up(&mut s).is_ok());
+        assert_eq!(s.rank, 1);
+        assert!(try_rank_up(&mut s).is_ok());
+        assert_eq!(s.rank, 2);
+        assert!(try_rank_up(&mut s).is_err()); // gate 15 not reached
+    }
+
+    #[test]
+    fn prestige_resets_baseline_and_steepens() {
+        let mut s = state_with(2_000_000_000, 13, 0, 0);
+        assert!(try_prestige(&mut s).is_ok());
+        assert_eq!((s.rank, s.prestige, s.prestige_token_floor), (0, 1, 2_000_000_000));
+        let v = progress_view(&s);
+        assert_eq!((v.xp, v.level), (0, 1));
+        let mut not_godlike = state_with(2_000_000_000, 12, 0, 0);
+        assert!(try_prestige(&mut not_godlike).is_err());
+    }
+
+    #[test]
+    fn persistence_roundtrips() {
+        let s = state_with(42, 3, 1, 7);
+        let path = std::env::temp_dir().join(format!("mana-progress-{}.json", std::process::id()));
+        save_progress(&path, &s).unwrap();
+        assert_eq!(load_progress(&path), s); // load returns Default on missing/corrupt file
     }
 
     #[test]

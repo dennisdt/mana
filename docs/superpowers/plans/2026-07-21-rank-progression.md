@@ -213,7 +213,7 @@ pub struct ProgressStore(pub std::sync::Mutex<ProgressState>); // managed via ap
 pub fn spawn_progress_watcher(app: tauri::AppHandle); // 60s interval; scans real dirs; persists + emits "progress-update" on change
 ```
 
-- [ ] **Step 1: Failing tests** for the pure layer:
+- [x] **Step 1: Failing tests** for the pure layer:
 
 ```rust
 fn state_with(tokens: u64, rank: usize, prestige: u32, floor: u64) -> ProgressState {
@@ -263,10 +263,10 @@ fn persistence_roundtrips() {
 
 (`tier` note: `progress_view` maps `tier = TIERS[rank]` of the CURRENT rank — the first assert uses rank 1 = "plastic"→ wait: rank 1 is "plastic". Fix the first test's expectation to `"plastic"` — rank passed in is 1. This is the kind of off-by-one the tests exist to catch; make the test read `assert_eq!(v.tier, "plastic")`.)
 
-- [ ] **Step 2:** `cargo test` → new tests FAIL.
-- [ ] **Step 3:** Implement pure layer + `save_progress`/`load_progress` (serde_json to `app_data_dir()/progress.json`; the path-taking functions are the testable core, the Tauri layer resolves the real path). Watcher mirrors `activity::spawn_activity_watcher`: `tauri::async_runtime::spawn`, `tokio::time::interval(60s)`, scan `dirs::home_dir().join(".claude/projects")` and `.join(".codex/sessions")` — home dir via `std::env::var_os("HOME")` (macOS-only app; no new deps), lock → scan → if `progress_view` changed: save + `app.emit("progress-update", &view)`. First tick runs immediately (interval's default) so history reconciles at startup. Commands lock the same `ProgressStore`, mutate via the `try_*` functions, persist, emit, and return the fresh view.
-- [ ] **Step 4:** `cargo test` → PASS. Also `cargo build` to prove the Tauri wiring compiles.
-- [ ] **Step 5:** Commit: `feat: progress state, commands, and watcher`.
+- [x] **Step 2:** `cargo test` → new tests FAIL.
+- [x] **Step 3:** Implement pure layer + `save_progress`/`load_progress` (serde_json to `app_data_dir()/progress.json`; the path-taking functions are the testable core, the Tauri layer resolves the real path). Watcher mirrors `activity::spawn_activity_watcher`: `tauri::async_runtime::spawn`, `tokio::time::interval(60s)`, scan `dirs::home_dir().join(".claude/projects")` and `.join(".codex/sessions")` — home dir via `std::env::var_os("HOME")` (macOS-only app; no new deps), lock → scan → if `progress_view` changed: save + `app.emit("progress-update", &view)`. First tick runs immediately (interval's default) so history reconciles at startup. Commands lock the same `ProgressStore`, mutate via the `try_*` functions, persist, emit, and return the fresh view.
+- [x] **Step 4:** `cargo test` → PASS. Also `cargo build` to prove the Tauri wiring compiles.
+- [x] **Step 5:** Commit: `feat: progress state, commands, and watcher`.
 
 ---
 
