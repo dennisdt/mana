@@ -1,4 +1,5 @@
 .claude/active-task.md
+.DS_Store
 node_modules/
 target/
 dist/
