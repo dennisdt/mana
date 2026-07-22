@@ -385,8 +385,8 @@ Champion additionally animates its border-image gradient angle (reuse a keyframe
 
 Badge fallback (until Codex art lands): `.badge { width: 24px; height: 24px; }` rendered as `background-image: url("/badges/prestige-<n>.png")` **plus** a CSS `::after` star glyph (`content: "★"`) that is visible only when the image is absent — implement by setting the `<span class="badge" data-n="3">` text/star in JS when an `Image()` probe fails (same probe helper Task 7 adds). Star tint cycles: n 1–3 silver `#dbe7f4`, 4–6 gold `#f2c968`, 7–9 diamond `#9be8ff`, 10 champion gradient text via `background-clip: text`. Prestige >10: the 10th badge gets a `data-count` attribute rendered as a small superscript via `::before { content: attr(data-count); }`.
 
-- [ ] **Step 1: Failing styles tests** — extend `src/styles.test.ts` in its existing raw-CSS-text style: every tier in the table above has a `#root[data-rank="…"]` rule; naked kills `::before` ticks; `champion-radiance` keyframes exist AND are referenced inside the `prefers-reduced-motion` block; the shared border rule consumes `var(--frame-1`/`--frame-glow`.
-- [ ] **Step 2:** `npm test -- styles` → FAIL. **Step 3:** Implement. **Step 4:** `npm test` → PASS. **Step 5:** Commit: `feat: rank border themes and badge fallbacks`.
+- [x] **Step 1: Failing styles tests** — extend `src/styles.test.ts` in its existing raw-CSS-text style: every tier in the table above has a `#root[data-rank="…"]` rule; naked kills `::before` ticks; `champion-radiance` keyframes exist AND are referenced inside the `prefers-reduced-motion` block; the shared border rule consumes `var(--frame-1`/`--frame-glow`.
+- [x] **Step 2:** `npm test -- styles` → FAIL. **Step 3:** Implement. **Step 4:** `npm test` → PASS. **Step 5:** Commit: `feat: rank border themes and badge fallbacks`.
 
 ---
 
