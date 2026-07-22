@@ -15,10 +15,11 @@ import {
 } from "./sprite-animation";
 import { cardHtml, providerIsVisible, type Snapshot } from "./view";
 import {
-  ROSTER_WIDTH,
   createSerialQueue,
-  rosterHeight,
+  restoreScale,
   rosterOrigin,
+  scaleForWidth,
+  scaledRosterSize,
 } from "./window-layout";
 
 type Activity = { claude: boolean; codex: boolean };
@@ -158,6 +159,16 @@ function tick(): void {
   });
 }
 
+const SCALE_STORAGE_KEY = "mana.scale";
+let scale = restoreScale(localStorage.getItem(SCALE_STORAGE_KEY));
+let appliedSize: { width: number; height: number } | undefined;
+
+function applyScale(): void {
+  document.documentElement.style.zoom = String(scale);
+}
+
+applyScale();
+
 const enqueueSizing = createSerialQueue((error) => {
   console.error("[mana] window sizing failed", error);
 });
@@ -165,14 +176,14 @@ const enqueueSizing = createSerialQueue((error) => {
 function resizeRosterContent(): void {
   void enqueueSizing(async () => {
     const card = document.getElementById("card")!;
-    const height = rosterHeight(card.scrollHeight);
+    const size = scaledRosterSize(card.scrollHeight, scale);
     const win = getCurrentWindow();
     const position = await win.outerPosition();
     const monitor = await currentMonitor();
     const target = monitor
       ? rosterOrigin(
           position,
-          { width: ROSTER_WIDTH, height },
+          size,
           {
             x: monitor.workArea.position.x,
             y: monitor.workArea.position.y,
@@ -182,7 +193,8 @@ function resizeRosterContent(): void {
           monitor.scaleFactor,
         )
       : position;
-    await win.setSize(new LogicalSize(ROSTER_WIDTH, height));
+    appliedSize = size;
+    await win.setSize(new LogicalSize(size.width, size.height));
     await win.setPosition(new PhysicalPosition(target.x, target.y));
   });
 }
@@ -205,6 +217,23 @@ void getCurrentWindow().onMoved(() => {
     moving = false;
     updateSprites();
   }, 300);
+});
+
+let resizeTimer: ReturnType<typeof setTimeout> | undefined;
+void getCurrentWindow().onResized(({ payload }) => {
+  if (!appliedSize) return;
+  const logical = payload.toLogical(window.devicePixelRatio);
+  const programmatic =
+    Math.abs(logical.width - appliedSize.width) <= 1 &&
+    Math.abs(logical.height - appliedSize.height) <= 1;
+  if (programmatic) return;
+  scale = scaleForWidth(logical.width);
+  applyScale();
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    localStorage.setItem(SCALE_STORAGE_KEY, String(scale));
+    resizeRosterContent();
+  }, 250);
 });
 
 void listen<Snapshot>("usage-update", (e) => {

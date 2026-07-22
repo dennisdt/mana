@@ -19,12 +19,12 @@ describe("fantasy gaming HUD stylesheet", () => {
     expect(styles).not.toContain("nimbus.png");
     expect(styles).not.toContain(".familiar-slot::before");
     expect(styles).not.toContain(".familiar-slot::after");
-    expect(styles).not.toContain("image-rendering: pixelated");
     expect(styles).toMatch(/#card section\s*\{[^}]*grid-template-columns:\s*60px minmax\(0, 1fr\)/s);
     const spriteRule = styles.match(/\.sprite\s*\{([^}]*)\}/s)?.[1] ?? "";
     expect(spriteRule).toMatch(/width:\s*56px/);
     expect(spriteRule).toMatch(/height:\s*56px/);
     expect(spriteRule).toMatch(/background-size:\s*224px 168px/);
+    expect(spriteRule).toMatch(/image-rendering:\s*pixelated/);
     expect(spriteRule).not.toContain("animation:");
     expect(styles).toMatch(/\.sprite\[data-frame="0"\]\s*\{[^}]*background-position-x:\s*0/s);
     expect(styles).toMatch(/\.sprite\[data-frame="1"\]\s*\{[^}]*background-position-x:\s*-56px/s);
