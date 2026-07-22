@@ -43,7 +43,7 @@ pub fn rank_up_eligible(level: u32, rank: usize) -> bool;   // rank<13 && level 
 pub fn prestige_eligible(rank: usize) -> bool;              // rank == 13
 ```
 
-- [ ] **Step 1: Write failing tests** in a `#[cfg(test)] mod tests` in `progress.rs`:
+- [x] **Step 1: Write failing tests** in a `#[cfg(test)] mod tests` in `progress.rs`:
 
 ```rust
 #[test]
@@ -93,8 +93,8 @@ fn eligibility_rules() {
 }
 ```
 
-- [ ] **Step 2:** `cd src-tauri && cargo test progress` → FAIL (module/functions missing).
-- [ ] **Step 3:** Implement. Core of the curve (u128 to survive `3^p·L³`):
+- [x] **Step 2:** `cd src-tauri && cargo test progress` → FAIL (module/functions missing).
+- [x] **Step 3:** Implement. Core of the curve (u128 to survive `3^p·L³`):
 
 ```rust
 pub fn xp_for_level(level: u32, prestige: u32) -> u64 {
@@ -113,8 +113,8 @@ pub fn level_for_xp(xp: u64, prestige: u32) -> u32 {
 }
 ```
 
-- [ ] **Step 4:** `cargo test progress` → all 5 PASS.
-- [ ] **Step 5:** Commit: `feat: rank curve and gate math`.
+- [x] **Step 4:** `cargo test progress` → all 5 PASS.
+- [x] **Step 5:** Commit: `feat: rank curve and gate math`.
 
 ---
 
@@ -143,7 +143,7 @@ Rules the implementation MUST honor (each is a test):
 3. Re-scanning an unchanged tree changes nothing (idempotence).
 4. Appending to a scanned file adds only the delta.
 
-- [ ] **Step 1: Write failing tests** (same `tests` mod). Test skeleton showing the fixture idiom and the four rules:
+- [x] **Step 1: Write failing tests** (same `tests` mod). Test skeleton showing the fixture idiom and the four rules:
 
 ```rust
 fn write(path: &std::path::Path, contents: &str) {
@@ -178,10 +178,10 @@ fn claude_scan_sums_all_usage_fields_and_is_idempotent() {
 
 Plus the codex mirror test: one file containing the 20k event then (after first scan) an appended event with `"total_tokens":20900` → totals go 20000 → 20900 (delta 900, not 40900); and a fresh `TallyState` given a file whose latest total is smaller than a stored `codex_totals` entry contributes 0.
 
-- [ ] **Step 2:** `cargo test tally` → FAIL.
-- [ ] **Step 3:** Implement. Notes: recurse with a small manual stack (no walkdir dep); read with `std::fs::File` + `Seek` to offset; `serde_json::from_str::<serde_json::Value>` per line; extract via `.get(...).and_then(|v| v.as_u64())` chains. For codex, search `payload.info.total_token_usage.total_tokens` and also tolerate the field at `info.total_token_usage` directly (both shapes exist in the wild).
-- [ ] **Step 4:** `cargo test` → PASS (Task 1 tests still green).
-- [ ] **Step 5:** Commit: `feat: incremental token tally scanner`.
+- [x] **Step 2:** `cargo test tally` → FAIL.
+- [x] **Step 3:** Implement. Notes: recurse with a small manual stack (no walkdir dep); read with `std::fs::File` + `Seek` to offset; `serde_json::from_str::<serde_json::Value>` per line; extract via `.get(...).and_then(|v| v.as_u64())` chains. For codex, search `payload.info.total_token_usage.total_tokens` and also tolerate the field at `info.total_token_usage` directly (both shapes exist in the wild).
+- [x] **Step 4:** `cargo test` → PASS (Task 1 tests still green).
+- [x] **Step 5:** Commit: `feat: incremental token tally scanner`.
 
 ---
 
@@ -213,7 +213,7 @@ pub struct ProgressStore(pub std::sync::Mutex<ProgressState>); // managed via ap
 pub fn spawn_progress_watcher(app: tauri::AppHandle); // 60s interval; scans real dirs; persists + emits "progress-update" on change
 ```
 
-- [ ] **Step 1: Failing tests** for the pure layer:
+- [x] **Step 1: Failing tests** for the pure layer:
 
 ```rust
 fn state_with(tokens: u64, rank: usize, prestige: u32, floor: u64) -> ProgressState {
@@ -263,10 +263,10 @@ fn persistence_roundtrips() {
 
 (`tier` note: `progress_view` maps `tier = TIERS[rank]` of the CURRENT rank — the first assert uses rank 1 = "plastic"→ wait: rank 1 is "plastic". Fix the first test's expectation to `"plastic"` — rank passed in is 1. This is the kind of off-by-one the tests exist to catch; make the test read `assert_eq!(v.tier, "plastic")`.)
 
-- [ ] **Step 2:** `cargo test` → new tests FAIL.
-- [ ] **Step 3:** Implement pure layer + `save_progress`/`load_progress` (serde_json to `app_data_dir()/progress.json`; the path-taking functions are the testable core, the Tauri layer resolves the real path). Watcher mirrors `activity::spawn_activity_watcher`: `tauri::async_runtime::spawn`, `tokio::time::interval(60s)`, scan `dirs::home_dir().join(".claude/projects")` and `.join(".codex/sessions")` — home dir via `std::env::var_os("HOME")` (macOS-only app; no new deps), lock → scan → if `progress_view` changed: save + `app.emit("progress-update", &view)`. First tick runs immediately (interval's default) so history reconciles at startup. Commands lock the same `ProgressStore`, mutate via the `try_*` functions, persist, emit, and return the fresh view.
-- [ ] **Step 4:** `cargo test` → PASS. Also `cargo build` to prove the Tauri wiring compiles.
-- [ ] **Step 5:** Commit: `feat: progress state, commands, and watcher`.
+- [x] **Step 2:** `cargo test` → new tests FAIL.
+- [x] **Step 3:** Implement pure layer + `save_progress`/`load_progress` (serde_json to `app_data_dir()/progress.json`; the path-taking functions are the testable core, the Tauri layer resolves the real path). Watcher mirrors `activity::spawn_activity_watcher`: `tauri::async_runtime::spawn`, `tokio::time::interval(60s)`, scan `dirs::home_dir().join(".claude/projects")` and `.join(".codex/sessions")` — home dir via `std::env::var_os("HOME")` (macOS-only app; no new deps), lock → scan → if `progress_view` changed: save + `app.emit("progress-update", &view)`. First tick runs immediately (interval's default) so history reconciles at startup. Commands lock the same `ProgressStore`, mutate via the `try_*` functions, persist, emit, and return the fresh view.
+- [x] **Step 4:** `cargo test` → PASS. Also `cargo build` to prove the Tauri wiring compiles.
+- [x] **Step 5:** Commit: `feat: progress state, commands, and watcher`.
 
 ---
 
