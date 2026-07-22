@@ -18,9 +18,13 @@ export function scaledRosterSize(cardScrollHeight: number, scale: number): Size 
   };
 }
 
+/// Slightly above 1: the HUD reads better at a distance, and a user who
+/// wants it smaller still has the full drag range.
+export const DEFAULT_SCALE = 1.2;
+
 export function restoreScale(raw: string | null): number {
   const parsed = Number(raw);
-  if (!Number.isFinite(parsed) || parsed <= 0) return 1;
+  if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_SCALE;
   return Math.max(MIN_SCALE, Math.min(parsed, MAX_SCALE));
 }
 

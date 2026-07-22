@@ -6,6 +6,7 @@ import {
   MIN_SCALE,
   ROSTER_WIDTH,
   createSerialQueue,
+  DEFAULT_SCALE,
   restoreScale,
   rosterHeight,
   rosterOrigin,
@@ -22,9 +23,11 @@ describe("permanent roster geometry", () => {
     const mainWindow = tauriConfig.app.windows.find(
       ({ label }) => label === "main",
     );
+    // The config window opens at the default scale so first paint matches
+    // what the frontend immediately resizes to for a fresh install.
     expect(mainWindow).toMatchObject({
-      width: ROSTER_WIDTH,
-      height: INITIAL_ROSTER_HEIGHT,
+      width: Math.round(ROSTER_WIDTH * DEFAULT_SCALE),
+      height: Math.ceil(INITIAL_ROSTER_HEIGHT * DEFAULT_SCALE),
     });
   });
 
@@ -104,13 +107,14 @@ describe("drag-resize scaling", () => {
     expect(scaledRosterSize(173, 0.5)).toEqual({ width: 220, height: 88 });
   });
 
-  it("restores a persisted scale, clamped, defaulting to 1", () => {
+  it("restores a persisted scale, clamped, defaulting to a comfortable 1.2", () => {
     expect(restoreScale("1.5")).toBe(1.5);
     expect(restoreScale("9")).toBe(MAX_SCALE);
     expect(restoreScale("0.1")).toBe(MIN_SCALE);
-    expect(restoreScale(null)).toBe(1);
-    expect(restoreScale("garbage")).toBe(1);
-    expect(restoreScale("-2")).toBe(1);
+    expect(restoreScale(null)).toBe(DEFAULT_SCALE);
+    expect(restoreScale("garbage")).toBe(DEFAULT_SCALE);
+    expect(restoreScale("-2")).toBe(DEFAULT_SCALE);
+    expect(DEFAULT_SCALE).toBe(1.2);
   });
 });
 
