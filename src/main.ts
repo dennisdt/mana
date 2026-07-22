@@ -8,7 +8,15 @@ import {
 } from "@tauri-apps/api/window";
 import { fmtAge, fmtCountdown, manaLeft, planLabel } from "./format";
 import { meterFillPixels } from "./meter";
-import { badgeSlots, levelLabel, xpBarFraction, type Progress } from "./progress-view";
+import {
+  actionKind,
+  badgeSlots,
+  dialogCopy,
+  levelLabel,
+  nextTier,
+  xpBarFraction,
+  type Progress,
+} from "./progress-view";
 import {
   spriteFrameAt,
   spriteFrameDelayAt,
@@ -166,8 +174,15 @@ function badgeHtml(n: number, prestige: number): string {
   return `<span class="badge" data-n="${n}"${count} aria-hidden="true"></span>`;
 }
 
+let progress: Progress | undefined;
+
 function renderProgress(p: Progress): void {
+  progress = p;
   document.getElementById("root")!.dataset.rank = p.tier;
+  const kind = actionKind(p);
+  const action = document.getElementById("action")!;
+  action.hidden = kind === null;
+  if (kind) action.textContent = dialogCopy(kind, p).confirm;
   const footer = document.getElementById("progress")!;
   const badges = footer.querySelector<HTMLElement>(".badges")!;
   const key = String(p.prestige);
@@ -261,6 +276,48 @@ void getCurrentWindow().onResized(({ payload }) => {
     localStorage.setItem(SCALE_STORAGE_KEY, String(scale));
     resizeRosterContent();
   }, 250);
+});
+
+const actionButton = document.getElementById("action")!;
+const ceremony = document.getElementById("ceremony")!;
+
+// #root is one deep Tauri drag region; interactive controls must swallow
+// mousedown or every click starts a window drag. The ceremony backdrop
+// deliberately stays draggable.
+actionButton.addEventListener("mousedown", (event) => event.stopPropagation());
+ceremony
+  .querySelector<HTMLElement>(".ceremony-panel")!
+  .addEventListener("mousedown", (event) => event.stopPropagation());
+
+function openCeremony(kind: "rank-up" | "prestige", p: Progress): void {
+  const copy = dialogCopy(kind, p);
+  ceremony.dataset.kind = kind;
+  ceremony.dataset.tier =
+    kind === "rank-up" ? (nextTier(p) ?? p.tier) : `prestige-${p.prestige + 1}`;
+  ceremony.querySelector<HTMLElement>("h1")!.textContent = copy.title;
+  ceremony.querySelector<HTMLElement>("p")!.textContent = copy.body;
+  ceremony.querySelector<HTMLElement>(".confirm")!.textContent = copy.confirm;
+  ceremony.hidden = false;
+}
+
+actionButton.addEventListener("click", () => {
+  if (!progress) return;
+  const kind = actionKind(progress);
+  if (kind) openCeremony(kind, progress);
+});
+
+ceremony.querySelector<HTMLElement>(".confirm")!.addEventListener("click", () => {
+  // One ceremony per click: re-render leaves the button glowing when more
+  // gates are already crossed, and the user opens the next ceremony.
+  const command = ceremony.dataset.kind === "prestige" ? "prestige" : "rank_up";
+  ceremony.hidden = true;
+  invoke<Progress>(command)
+    .then(renderProgress)
+    .catch((error) => console.error(`[mana] ${command} failed`, error));
+});
+
+ceremony.querySelector<HTMLElement>(".later")!.addEventListener("click", () => {
+  ceremony.hidden = true;
 });
 
 void listen<Snapshot>("usage-update", (e) => {

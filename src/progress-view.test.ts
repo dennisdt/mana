@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { actionKind, badgeSlots, levelLabel, tierDisplayName, xpBarFraction } from "./progress-view";
+import {
+  actionKind,
+  badgeSlots,
+  dialogCopy,
+  levelLabel,
+  nextTier,
+  romanNumeral,
+  tierDisplayName,
+  xpBarFraction,
+} from "./progress-view";
 
 const base = {
   xp: 850,
@@ -35,5 +44,32 @@ describe("progress footer", () => {
     expect(actionKind(base)).toBeNull();
     expect(actionKind({ ...base, rank_up_eligible: true })).toBe("rank-up");
     expect(actionKind({ ...base, rank: 13, prestige_eligible: true })).toBe("prestige");
+  });
+});
+
+describe("ceremony copy", () => {
+  it("renders roman numerals up to twenty", () => {
+    expect(romanNumeral(4)).toBe("IV");
+    expect(romanNumeral(9)).toBe("IX");
+    expect(romanNumeral(20)).toBe("XX");
+    expect(romanNumeral(21)).toBe("21");
+  });
+  it("walks to the next tier and stops at godlike", () => {
+    expect(nextTier({ ...base, rank: 0, tier: "naked" })).toBe("plastic");
+    expect(nextTier({ ...base, rank: 13, tier: "godlike" })).toBeNull();
+  });
+  it("writes the rank-up ceremony", () => {
+    const copy = dialogCopy("rank-up", { ...base, rank: 5, level: 36 });
+    expect(copy.title).toBe("ASCEND TO GOLD");
+    expect(copy.body).toBe("Level 36 · Silver → Gold");
+    expect(copy.confirm).toBe("Rank Up");
+  });
+  it("writes the prestige ceremony", () => {
+    const copy = dialogCopy("prestige", { ...base, rank: 13, tier: "godlike", prestige: 1 });
+    expect(copy.title).toBe("PRESTIGE II");
+    expect(copy.body).toBe(
+      "The curve steepens. Begin again at Level 1 — Prestige 2 badge is yours forever.",
+    );
+    expect(copy.confirm).toBe("Prestige");
   });
 });

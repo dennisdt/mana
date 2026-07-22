@@ -33,6 +33,9 @@
   /* The xp bar nests inside the footer at the corner-tick inset, so its
      rounding follows the same concentric rule as the tick outline. */
   --xpbar-radius: max(1px, calc(var(--hud-radius) - var(--corner-tick-inset)));
+  /* Pill controls double the HUD radius so every rounded element belongs to
+     the same corner family instead of introducing ad-hoc radii. */
+  --pill-radius: calc(var(--hud-radius) * 2);
 }
 
 html,
@@ -179,6 +182,108 @@ body {
   background: linear-gradient(90deg, var(--c1), var(--c2));
   box-shadow: 0 0 6px var(--glow);
   transition: width 0.45s cubic-bezier(0.22, 0.8, 0.28, 1);
+}
+
+#action {
+  position: absolute;
+  z-index: 5;
+  top: 8px;
+  right: 10px;
+  padding: 4px 10px;
+  border: 1px solid var(--gold);
+  border-radius: var(--pill-radius);
+  background: linear-gradient(180deg, rgba(64, 54, 26, 0.92), rgba(30, 24, 9, 0.92));
+  box-shadow: 0 0 10px rgba(242, 201, 104, 0.45);
+  color: var(--gold);
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  animation: status-pulse 1.6s ease-in-out infinite;
+}
+
+#ceremony {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at 50% 40%, rgba(28, 24, 47, 0.58), rgba(4, 5, 10, 0.9));
+}
+
+#ceremony[hidden] {
+  display: none;
+}
+
+.ceremony-panel {
+  /* Tier tint arrives via the same custom-property pattern the provider
+     cards use; --frame-* values land with the data-rank border themes and
+     fall back to the HUD's gold-and-silver ceremony dress. */
+  --c1: var(--frame-1, var(--gold));
+  --c2: var(--frame-2, var(--silver));
+  --glow: var(--frame-glow, rgba(242, 201, 104, 0.4));
+  position: relative;
+  min-width: 250px;
+  padding: 18px 24px 16px;
+  border: 1px solid var(--c1);
+  border-radius: var(--hud-radius);
+  background: linear-gradient(180deg, rgba(29, 34, 47, 0.97), rgba(8, 10, 17, 0.97));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    0 0 26px var(--glow),
+    0 18px 40px rgba(0, 0, 0, 0.5);
+  text-align: center;
+}
+
+.ceremony-panel::before {
+  position: absolute;
+  inset: var(--corner-tick-inset);
+  content: "";
+  pointer-events: none;
+  border: 1px solid var(--c2);
+  border-radius: var(--corner-tick-radius);
+  opacity: 0.38;
+}
+
+.ceremony-panel h1 {
+  margin: 0 0 8px;
+  background: linear-gradient(135deg, var(--c2), var(--c1) 60%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+}
+
+.ceremony-panel p {
+  margin: 0 0 14px;
+  color: var(--ink-dim);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.ceremony-panel button {
+  padding: 5px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--pill-radius);
+  background: rgba(219, 231, 244, 0.08);
+  color: var(--ink-dim);
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.ceremony-panel .confirm {
+  margin-right: 8px;
+  border-color: var(--c1);
+  background: linear-gradient(135deg, var(--c2), var(--c1) 70%);
+  box-shadow: 0 0 12px var(--glow);
+  color: #0a0c14;
+  font-weight: 750;
 }
 
 .claude {
@@ -492,7 +597,8 @@ body {
   }
 
   .fill::before,
-  .provider-card[data-working] .activity-signal {
+  .provider-card[data-working] .activity-signal,
+  #action {
     animation: none;
   }
 
