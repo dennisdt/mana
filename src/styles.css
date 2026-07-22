@@ -688,12 +688,34 @@ body {
   --frame-glow: rgba(242, 201, 104, 0.5);
 }
 
-#root[data-rank="iron"],
-#root[data-rank="bronze"],
-#root[data-rank="silver"],
-#root[data-rank="gold"],
-#root[data-rank="platinum"] {
-  border-image: linear-gradient(160deg, var(--frame-1), var(--frame-2)) 1;
+/* Metallic rank ring. border-image ignores border-radius and would poke
+   square gradient corners into the rounded frame, so tier gradients paint
+   on this overlay and the xor mask keeps only the border band, which
+   follows --hud-radius. Root's solid border-color stays as the fallback
+   underneath. */
+#frame {
+  position: absolute;
+  z-index: 0;
+  inset: -1px;
+  pointer-events: none;
+  border: 1px solid transparent;
+  border-radius: var(--hud-radius);
+  -webkit-mask:
+    linear-gradient(#fff 0 0) padding-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#fff 0 0) padding-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+}
+
+#root[data-rank="iron"] #frame,
+#root[data-rank="bronze"] #frame,
+#root[data-rank="silver"] #frame,
+#root[data-rank="gold"] #frame,
+#root[data-rank="platinum"] #frame {
+  background: linear-gradient(160deg, var(--frame-1), var(--frame-2));
 }
 
 /* Registered so champion-radiance can sweep the gradient angle itself. */
@@ -703,8 +725,8 @@ body {
   initial-value: 160deg;
 }
 
-#root[data-rank="champion"] {
-  border-image: linear-gradient(var(--radiance-angle), var(--frame-1), var(--frame-2)) 1;
+#root[data-rank="champion"] #frame {
+  background: linear-gradient(var(--radiance-angle), var(--frame-1), var(--frame-2));
   animation: champion-radiance 6s linear infinite;
 }
 
@@ -821,7 +843,7 @@ body {
   .fill::before,
   .provider-card[data-working] .activity-signal,
   #action,
-  #root[data-rank="champion"] {
+  #root[data-rank="champion"] #frame {
     animation: none;
   }
 

@@ -181,11 +181,21 @@ describe("rank border themes", () => {
     expect(styles).toMatch(/#root\[data-rank="naked"\]::before[^{]*\{[^}]*content:\s*none/s);
   });
 
-  it("gives metallic tiers a gradient border image", () => {
+  it("rings metallic tiers with a radius-following gradient, not border-image", () => {
+    // border-image ignores border-radius, which would poke square gradient
+    // corners into the rounded HUD frame — the exact defect the concentric
+    // corner work removed. The #frame overlay masks the gradient to a ring
+    // that inherits the radius instead.
+    expect(styles).not.toMatch(/border-image\s*:/);
+    expect(styles).toMatch(
+      /#frame\s*\{[^}]*border-radius:\s*var\(--hud-radius\)/s,
+    );
+    expect(styles).toMatch(/#frame\s*\{[^}]*-webkit-mask-composite:\s*xor/s);
+    expect(styles).toMatch(/#frame\s*\{[^}]*pointer-events:\s*none/s);
     for (const tier of ["iron", "bronze", "silver", "gold", "platinum"]) {
       expect(styles, tier).toMatch(
         new RegExp(
-          `#root\\[data-rank="${tier}"\\][^{]*\\{[^}]*border-image:\\s*linear-gradient\\(160deg, var\\(--frame-1\\), var\\(--frame-2\\)\\) 1`,
+          `#root\\[data-rank="${tier}"\\] #frame[^{]*\\{[^}]*background:\\s*linear-gradient\\(160deg, var\\(--frame-1\\), var\\(--frame-2\\)\\)`,
           "s",
         ),
       );
@@ -195,7 +205,7 @@ describe("rank border themes", () => {
   it("animates champion radiance and stills it under reduced motion", () => {
     expect(styles).toContain("@keyframes champion-radiance");
     expect(styles).toMatch(
-      /#root\[data-rank="champion"\]\s*\{[^}]*animation:\s*champion-radiance 6s linear infinite/s,
+      /#root\[data-rank="champion"\] #frame\s*\{[^}]*animation:\s*champion-radiance 6s linear infinite/s,
     );
     const reducedMotion = styles.slice(
       styles.indexOf("@media (prefers-reduced-motion: reduce)"),
