@@ -85,10 +85,10 @@ body {
   inset: var(--corner-tick-inset);
   border-radius: var(--corner-tick-radius);
   background:
-    linear-gradient(90deg, rgba(219, 231, 244, 0.58), rgba(219, 231, 244, 0.58)) left top / 20px 1px no-repeat,
-    linear-gradient(180deg, rgba(219, 231, 244, 0.58), rgba(219, 231, 244, 0.58)) left top / 1px 9px no-repeat,
-    linear-gradient(90deg, rgba(242, 201, 104, 0.52), rgba(242, 201, 104, 0.52)) right bottom / 20px 1px no-repeat,
-    linear-gradient(180deg, rgba(242, 201, 104, 0.52), rgba(242, 201, 104, 0.52)) right bottom / 1px 9px no-repeat;
+    linear-gradient(90deg, var(--tick-1, rgba(219, 231, 244, 0.58)), var(--tick-1, rgba(219, 231, 244, 0.58))) left top / 20px 1px no-repeat,
+    linear-gradient(180deg, var(--tick-1, rgba(219, 231, 244, 0.58)), var(--tick-1, rgba(219, 231, 244, 0.58))) left top / 1px 9px no-repeat,
+    linear-gradient(90deg, var(--tick-2, rgba(242, 201, 104, 0.52)), var(--tick-2, rgba(242, 201, 104, 0.52))) right bottom / 20px 1px no-repeat,
+    linear-gradient(180deg, var(--tick-2, rgba(242, 201, 104, 0.52)), var(--tick-2, rgba(242, 201, 104, 0.52))) right bottom / 1px 9px no-repeat;
 }
 
 #root::after {
@@ -592,6 +592,8 @@ body {
 #ceremony[data-tier="plastic"] {
   --frame-1: #b8bec8;
   --frame-2: #8b929e;
+  --ring: linear-gradient(160deg, var(--frame-1), var(--frame-2));
+  --frame-w: 1px;
   --frame-glow: transparent;
 }
 
@@ -599,6 +601,8 @@ body {
 #ceremony[data-tier="wood"] {
   --frame-1: #a5713d;
   --frame-2: #6b4726;
+  --ring: linear-gradient(160deg, var(--frame-1), var(--frame-2));
+  --frame-w: 1px;
   --frame-glow: transparent;
 }
 
@@ -606,6 +610,8 @@ body {
 #ceremony[data-tier="iron"] {
   --frame-1: #9aa3ad;
   --frame-2: #5f6770;
+  --ring: linear-gradient(160deg, var(--frame-1), var(--frame-2));
+  --frame-w: 2px;
   --frame-glow: rgba(154, 163, 173, 0.25);
 }
 
@@ -613,6 +619,8 @@ body {
 #ceremony[data-tier="bronze"] {
   --frame-1: #cd7f32;
   --frame-2: #8c5a24;
+  --ring: linear-gradient(160deg, var(--frame-1), var(--frame-2));
+  --frame-w: 2px;
   --frame-glow: rgba(205, 127, 50, 0.3);
 }
 
@@ -620,6 +628,8 @@ body {
 #ceremony[data-tier="silver"] {
   --frame-1: #e6edf5;
   --frame-2: #97a3b4;
+  --ring: linear-gradient(160deg, var(--frame-1), var(--frame-2));
+  --frame-w: 2px;
   --frame-glow: rgba(230, 237, 245, 0.35);
 }
 
@@ -627,6 +637,8 @@ body {
 #ceremony[data-tier="gold"] {
   --frame-1: #f2c968;
   --frame-2: #b8862e;
+  --ring: linear-gradient(160deg, var(--frame-1), var(--frame-2));
+  --frame-w: 2px;
   --frame-glow: rgba(242, 201, 104, 0.45);
 }
 
@@ -634,6 +646,8 @@ body {
 #ceremony[data-tier="platinum"] {
   --frame-1: #dfe9ec;
   --frame-2: #9fb6c4;
+  --ring: linear-gradient(160deg, var(--frame-1), var(--frame-2));
+  --frame-w: 2px;
   --frame-glow: rgba(223, 233, 236, 0.5);
 }
 
@@ -641,6 +655,8 @@ body {
 #ceremony[data-tier="emerald"] {
   --frame-1: #3ddc84;
   --frame-2: #147a4a;
+  --ring: linear-gradient(160deg, var(--frame-1), var(--frame-2));
+  --frame-w: 2px;
   --frame-glow: rgba(61, 220, 132, 0.5);
 }
 
@@ -648,6 +664,8 @@ body {
 #ceremony[data-tier="diamond"] {
   --frame-1: #9be8ff;
   --frame-2: #4aa8d8;
+  --ring: linear-gradient(160deg, var(--frame-1), var(--frame-2));
+  --frame-w: 2px;
   --frame-glow: rgba(155, 232, 255, 0.55);
 }
 
@@ -655,6 +673,10 @@ body {
 #ceremony[data-tier="master"] {
   --frame-1: #ff5a6e;
   --frame-2: #a3172c;
+  --ring: linear-gradient(160deg, var(--frame-1), var(--frame-2));
+  --frame-w: 3px;
+  --tick-1: var(--frame-1);
+  --tick-2: var(--frame-2);
   --frame-glow: rgba(255, 90, 110, 0.55);
 }
 
@@ -662,6 +684,10 @@ body {
 #ceremony[data-tier="legend"] {
   --frame-1: #b06aff;
   --frame-2: #5e1ea8;
+  --ring: linear-gradient(160deg, var(--frame-1), var(--frame-2));
+  --frame-w: 3px;
+  --tick-1: var(--frame-1);
+  --tick-2: var(--frame-2);
   --frame-glow: rgba(176, 106, 255, 0.55);
 }
 
@@ -669,6 +695,10 @@ body {
 #ceremony[data-tier="champion"] {
   --frame-1: #ffd75e;
   --frame-2: #3f8cff;
+  --ring: linear-gradient(var(--radiance-angle), var(--frame-1), var(--frame-2));
+  --frame-w: 3px;
+  --tick-1: var(--frame-1);
+  --tick-2: var(--frame-2);
   --frame-glow: rgba(255, 215, 94, 0.6);
 }
 
@@ -676,6 +706,10 @@ body {
 #ceremony[data-tier="godlike"] {
   --frame-1: #fff6d8;
   --frame-2: #ffd9f6;
+  --ring: linear-gradient(160deg, var(--frame-1), var(--frame-2));
+  --frame-w: 3px;
+  --tick-1: var(--frame-1);
+  --tick-2: var(--frame-2);
   --frame-glow: rgba(255, 246, 216, 0.75);
   --frame-glow-2: rgba(190, 225, 255, 0.4);
 }
@@ -698,7 +732,8 @@ body {
   z-index: 0;
   inset: -1px;
   pointer-events: none;
-  border: 1px solid transparent;
+  background: var(--ring, none);
+  border: var(--frame-w, 1px) solid transparent;
   border-radius: var(--hud-radius);
   -webkit-mask:
     linear-gradient(#fff 0 0) padding-box,
@@ -710,13 +745,6 @@ body {
   mask-composite: exclude;
 }
 
-#root[data-rank="iron"] #frame,
-#root[data-rank="bronze"] #frame,
-#root[data-rank="silver"] #frame,
-#root[data-rank="gold"] #frame,
-#root[data-rank="platinum"] #frame {
-  background: linear-gradient(160deg, var(--frame-1), var(--frame-2));
-}
 
 /* Registered so champion-radiance can sweep the gradient angle itself. */
 @property --radiance-angle {
@@ -726,8 +754,34 @@ body {
 }
 
 #root[data-rank="champion"] #frame {
-  background: linear-gradient(var(--radiance-angle), var(--frame-1), var(--frame-2));
   animation: champion-radiance 6s linear infinite;
+}
+
+/* The final tier's halo breathes: same shadow stack as the shared #root
+   rule, swelling only the two tier glows. */
+#root[data-rank="godlike"] {
+  animation: godlike-halo 4s ease-in-out infinite alternate;
+}
+
+@keyframes godlike-halo {
+  from {
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.15),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.52),
+      inset 0 0 30px rgba(86, 71, 119, 0.08),
+      0 10px 28px rgba(0, 0, 0, 0.24),
+      0 0 14px var(--frame-glow, transparent),
+      0 0 30px var(--frame-glow-2, transparent);
+  }
+  to {
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.15),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.52),
+      inset 0 0 30px rgba(86, 71, 119, 0.08),
+      0 10px 28px rgba(0, 0, 0, 0.24),
+      0 0 24px var(--frame-glow, transparent),
+      0 0 48px var(--frame-glow-2, transparent);
+  }
 }
 
 /* Prestige badges: PNG art per slot, with a tinted CSS star that main.ts
@@ -843,7 +897,8 @@ body {
   .fill::before,
   .provider-card[data-working] .activity-signal,
   #action,
-  #root[data-rank="champion"] #frame {
+  #root[data-rank="champion"] #frame,
+  #root[data-rank="godlike"] {
     animation: none;
   }
 

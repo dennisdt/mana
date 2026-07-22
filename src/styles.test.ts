@@ -181,25 +181,65 @@ describe("rank border themes", () => {
     expect(styles).toMatch(/#root\[data-rank="naked"\]::before[^{]*\{[^}]*content:\s*none/s);
   });
 
-  it("rings metallic tiers with a radius-following gradient, not border-image", () => {
+  it("rings every dressed tier with a radius-following gradient, not border-image", () => {
     // border-image ignores border-radius, which would poke square gradient
     // corners into the rounded HUD frame — the exact defect the concentric
-    // corner work removed. The #frame overlay masks the gradient to a ring
-    // that inherits the radius instead.
+    // corner work removed. The #frame overlay masks each tier's --ring
+    // gradient to a band that inherits the radius instead.
     expect(styles).not.toMatch(/border-image\s*:/);
     expect(styles).toMatch(
       /#frame\s*\{[^}]*border-radius:\s*var\(--hud-radius\)/s,
     );
     expect(styles).toMatch(/#frame\s*\{[^}]*-webkit-mask-composite:\s*xor/s);
     expect(styles).toMatch(/#frame\s*\{[^}]*pointer-events:\s*none/s);
-    for (const tier of ["iron", "bronze", "silver", "gold", "platinum"]) {
+    expect(styles).toMatch(/#frame\s*\{[^}]*background:\s*var\(--ring, none\)/s);
+    expect(styles).toMatch(
+      /#frame\s*\{[^}]*border:\s*var\(--frame-w, 1px\) solid transparent/s,
+    );
+    for (const [tier] of tiers) {
       expect(styles, tier).toMatch(
-        new RegExp(
-          `#root\\[data-rank="${tier}"\\] #frame[^{]*\\{[^}]*background:\\s*linear-gradient\\(160deg, var\\(--frame-1\\), var\\(--frame-2\\)\\)`,
-          "s",
-        ),
+        new RegExp(`#root\\[data-rank="${tier}"\\][^{]*\\{[^}]*--ring:\\s*linear-gradient\\(`, "s"),
       );
     }
+  });
+
+  it("escalates frame weight with rank", () => {
+    const weights: Array<[string, string]> = [
+      ["plastic", "1px"], ["wood", "1px"],
+      ["iron", "2px"], ["bronze", "2px"], ["silver", "2px"], ["gold", "2px"],
+      ["platinum", "2px"], ["emerald", "2px"], ["diamond", "2px"],
+      ["master", "3px"], ["legend", "3px"], ["champion", "3px"], ["godlike", "3px"],
+    ];
+    for (const [tier, weight] of weights) {
+      expect(styles, tier).toMatch(
+        new RegExp(`#root\\[data-rank="${tier}"\\][^{]*\\{[^}]*--frame-w:\\s*${weight}`, "s"),
+      );
+    }
+  });
+
+  it("tints the corner ticks from the frame on the top tiers", () => {
+    expect(styles).toMatch(
+      /#root::before[^{]*\{[^}]*var\(--tick-1, rgba\(219, 231, 244, 0\.58\)\)/s,
+    );
+    expect(styles).toMatch(
+      /#root::before[^{]*\{[^}]*var\(--tick-2, rgba\(242, 201, 104, 0\.52\)\)/s,
+    );
+    for (const tier of ["master", "legend", "champion", "godlike"]) {
+      expect(styles, tier).toMatch(
+        new RegExp(`#root\\[data-rank="${tier}"\\][^{]*\\{[^}]*--tick-1:`, "s"),
+      );
+    }
+  });
+
+  it("breathes the godlike halo and stills it under reduced motion", () => {
+    expect(styles).toContain("@keyframes godlike-halo");
+    expect(styles).toMatch(
+      /#root\[data-rank="godlike"\]\s*\{[^}]*animation:\s*godlike-halo/s,
+    );
+    const reducedMotion = styles.slice(
+      styles.indexOf("@media (prefers-reduced-motion: reduce)"),
+    );
+    expect(reducedMotion).toContain('#root[data-rank="godlike"]');
   });
 
   it("animates champion radiance and stills it under reduced motion", () => {
