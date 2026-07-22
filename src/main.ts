@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { probeImage, resolveSheet } from "./cosmetics";
 import {
   currentMonitor,
   getCurrentWindow,
@@ -148,6 +149,8 @@ function renderProvider(provider: string): void {
   if (card.dataset.key !== key) {
     card.dataset.key = key;
     card.innerHTML = cardHtml(s, provider);
+    // Rebuilt sprites fall back to the CSS default sheet; re-dress them.
+    applySheets();
   }
   const stale = s?.status === "stale";
   card.classList.toggle("stale", stale === true);
@@ -166,6 +169,32 @@ function tick(): void {
   document.querySelectorAll<HTMLElement>(".age").forEach((el) => {
     el.textContent = el.dataset.age ? fmtAge(Number(el.dataset.age), now) : "";
   });
+}
+
+const sheetUrls: Record<string, string | undefined> = {};
+let sheetTier: string | undefined;
+
+function applySheets(): void {
+  for (const provider of ["claude", "codex"]) {
+    const url = sheetUrls[provider];
+    if (!url) continue;
+    document
+      .querySelectorAll<HTMLElement>(`.sprite[data-provider="${provider}"]`)
+      .forEach((element) => {
+        element.style.backgroundImage = `url("${url}")`;
+      });
+  }
+}
+
+function updateRankSheets(tier: string): void {
+  if (sheetTier === tier) return;
+  sheetTier = tier;
+  for (const provider of ["claude", "codex"]) {
+    void resolveSheet(provider, tier).then((url) => {
+      sheetUrls[provider] = url;
+      applySheets();
+    });
+  }
 }
 
 function badgeHtml(n: number, prestige: number): string {
@@ -191,10 +220,17 @@ function renderProgress(p: Progress): void {
     badges.innerHTML = badgeSlots(p.prestige)
       .map((n) => badgeHtml(n, p.prestige))
       .join("");
+    badges.querySelectorAll<HTMLElement>(".badge").forEach((badge) => {
+      // Missing badge art reveals the CSS star fallback instead of a gap.
+      void probeImage(`/badges/prestige-${badge.dataset.n}.png`).then((exists) => {
+        if (!exists) badge.dataset.fallback = "true";
+      });
+    });
   }
   footer.querySelector<HTMLElement>(".level")!.textContent = levelLabel(p);
   footer.querySelector<HTMLElement>(".xpfill")!.style.width =
     `${xpBarFraction(p) * 100}%`;
+  updateRankSheets(p.tier);
   resizeRosterContent();
 }
 

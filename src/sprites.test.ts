@@ -1,5 +1,5 @@
 // @ts-expect-error Vitest runs in Node, while the app intentionally omits Node types.
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 // @ts-expect-error Vitest runs in Node, while the app intentionally omits Node types.
 import { inflateSync } from "node:zlib";
 import { describe, expect, it } from "vitest";
@@ -117,6 +117,15 @@ describe("elemental mage sprite atlases", () => {
 
   it("keeps the Claude atlas aligned, padded, and transparent", () => {
     verifyAtlas("../public/sprites/claude-fire-poison.png");
+  });
+
+  it("validates every per-rank sheet the moment its art lands", () => {
+    // Rank sheets are Codex-generated later; an empty glob passes so the
+    // suite gates each drop automatically without blocking on missing art.
+    const names: string[] = readdirSync(new URL("../public/sprites/", import.meta.url));
+    for (const name of names.filter((file) => file.includes("-rank-"))) {
+      verifyAtlas(`../public/sprites/${name}`);
+    }
   });
 });
 

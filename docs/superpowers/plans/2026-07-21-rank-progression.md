@@ -406,9 +406,9 @@ export function probeImage(url: string): Promise<boolean>; // Image() onload/one
 export async function resolveSheet(provider: string, tier: string): Promise<string>; // rank sheet if probe succeeds else defaultSheet
 ```
 
-- [ ] **Step 1: Failing tests** (vitest; for `probeImage`/`resolveSheet` stub `globalThis.Image` with a class whose `set src` schedules onload/onerror by URL pattern — follow the DOM-stubbing style used in `view.test.ts`): `rankSheetUrl("claude","silver")` exact path; `resolveSheet` falls back when probe rejects; resolves rank sheet when probe succeeds.
-- [ ] **Step 2:** FAIL. **Step 3:** Implement; in `main.ts` after each rank change: `resolveSheet(provider, tier).then((url) => sprites.forEach((el) => el.style.backgroundImage = `url("${url}")`))`. Keep `background-size: 224px 168px` untouched — rank sheets share the geometry. Extend `src/sprites.test.ts`: glob `public/sprites/*-rank-*.png` (Node `readdirSync`) and run `verifyAtlas` on each existing file, so every future Codex drop is validated automatically; zero matching files must not fail the suite.
-- [ ] **Step 4:** `npm test` + `npx tsc --noEmit` → PASS. **Step 5:** Commit: `feat: per-rank sprite sheets with fallback`.
+- [x] **Step 1: Failing tests** (vitest; for `probeImage`/`resolveSheet` stub `globalThis.Image` with a class whose `set src` schedules onload/onerror by URL pattern — follow the DOM-stubbing style used in `view.test.ts`): `rankSheetUrl("claude","silver")` exact path; `resolveSheet` falls back when probe rejects; resolves rank sheet when probe succeeds.
+- [x] **Step 2:** FAIL. **Step 3:** Implement; in `main.ts` after each rank change: `resolveSheet(provider, tier).then((url) => sprites.forEach((el) => el.style.backgroundImage = `url("${url}")`))`. Keep `background-size: 224px 168px` untouched — rank sheets share the geometry. Extend `src/sprites.test.ts`: glob `public/sprites/*-rank-*.png` (Node `readdirSync`) and run `verifyAtlas` on each existing file, so every future Codex drop is validated automatically; zero matching files must not fail the suite.
+- [x] **Step 4:** `npm test` + `npx tsc --noEmit` → PASS. **Step 5:** Commit: `feat: per-rank sprite sheets with fallback`.
 
 ---
 
