@@ -54,6 +54,24 @@ Tiers, with the level required to *become eligible* for each:
   rank-up dialog; confirming advances exactly one tier and persists.
 - Multiple gates crossed → rank up repeatedly, one lavish dialog per tier.
 
+## Prestige
+
+- Eligible once at rank 13 (godlike). The top-right button becomes
+  **Prestige** (its own, extra-lavish dialog). Confirming: `prestige += 1`,
+  rank resets to 0 (naked), and the XP baseline resets — effective XP counts
+  only tokens earned after the prestige
+  (`xp = floor((total_tokens − prestige_token_floor) / 1000)`).
+- The curve steepens each prestige: XP to reach level L becomes
+  `floor(0.8 · L³ · 1.5^prestige)` (integer math: `4·L³·3^p / (5·2^p)`).
+  Rank gates stay the same levels — they just cost more tokens each cycle.
+- Each prestige earns a permanent badge shown beside the level chip in the
+  footer (all earned badges visible, e.g. P1 P2 P3). Badge art is
+  Codex-generated (`public/badges/prestige-<n>.png`, 96×96 transparent PNG,
+  displayed at 24×24 CSS, briefs in `docs/art/`); a missing PNG falls back
+  to a CSS-rendered star glyph tinted per prestige count so the system
+  works before art lands. Badges 1–10 get bespoke designs; beyond 10 the
+  badge shows the count on the 10th design.
+
 ## Architecture
 
 Rust owns all progression state and math (single source of truth); the
@@ -62,10 +80,12 @@ frontend only renders.
 - New `src-tauri/src/progress.rs`:
   - Tally scanner (dirs injectable for tests), curve + gate math, state
     persistence at `app_data_dir()/progress.json`
-    (`{ total_tokens, rank, claude_offsets, codex_totals }`).
-  - Emits `progress-update` `{ xp, level, rank, eligible }` on change;
-    commands `get_progress()` and `rank_up()` (validates eligibility
-    server-side, returns the new progress).
+    (`{ total_tokens, rank, prestige, prestige_token_floor, claude_offsets,
+    codex_offsets, codex_totals }`).
+  - Emits `progress-update` (xp, level, rank, tier, prestige, eligibility,
+    level progress) on change; commands `get_progress()`, `rank_up()` and
+    `prestige()` (each validates eligibility server-side, returns the new
+    progress).
 - Frontend (`src/main.ts` + new `src/progress-view.ts` pure helpers):
   - Footer strip under the provider cards: `Lv 12 · Silver` + a thin XP bar
     toward the next level (reuses meter styling language).
@@ -83,8 +103,10 @@ frontend only renders.
   respecting the concentric-corner formula (inner = outer − inset). Naked =
   no border, no corner ticks.
 - Sprites: per-tier sheets `public/sprites/<provider>-rank-<tier>.png`, same
-  geometry as today (224×168 PNG; 4 frames × 3 state rows of 56×56;
-  states idle/working/hover top-to-bottom; transparent background). The
+  geometry as today (448×336 PNG — 2x retina, displayed at 224×168 CSS;
+  4 frame columns × 3 state rows of 112×112 cells; states idle/working/hover
+  top-to-bottom; transparent background; must satisfy the existing
+  `verifyAtlas` invariants in `src/sprites.test.ts`). The
   *naked* base sheets are also new art (unarmored mages). Missing sheet →
   fall back to the current art so the app never breaks while art lands.
 - Art generation: briefs + per-tier prompts in `docs/art/`; Codex CLI
@@ -93,12 +115,13 @@ frontend only renders.
 
 ## Testing
 
-- Rust: curve math, gate eligibility, incremental tally (fixture JSONL files,
-  offset/duplicate-count cases), rank_up validation.
+- Rust: curve math (including prestige steepening), gate eligibility,
+  incremental tally (fixture JSONL files, offset/duplicate-count cases),
+  rank_up/prestige validation and baseline reset.
 - Vitest: progress-view pure helpers (footer text, xp-bar fraction, button
   visibility, dialog copy), styles assertions for rank themes.
 
 ## Out of scope
 
 - No XP from other tools/providers; no de-leveling; no server sync; no
-  prestige system; no settings UI for pacing constants.
+  settings UI for pacing constants.
