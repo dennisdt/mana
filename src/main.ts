@@ -8,6 +8,7 @@ import {
 } from "@tauri-apps/api/window";
 import { fmtAge, fmtCountdown, manaLeft, planLabel } from "./format";
 import { meterFillPixels } from "./meter";
+import { badgeSlots, levelLabel, xpBarFraction, type Progress } from "./progress-view";
 import {
   spriteFrameAt,
   spriteFrameDelayAt,
@@ -159,6 +160,29 @@ function tick(): void {
   });
 }
 
+function badgeHtml(n: number, prestige: number): string {
+  // Beyond ten prestiges the tenth badge carries the total as an overlay.
+  const count = n === 10 && prestige > 10 ? ` data-count="${prestige}"` : "";
+  return `<span class="badge" data-n="${n}"${count} aria-hidden="true"></span>`;
+}
+
+function renderProgress(p: Progress): void {
+  document.getElementById("root")!.dataset.rank = p.tier;
+  const footer = document.getElementById("progress")!;
+  const badges = footer.querySelector<HTMLElement>(".badges")!;
+  const key = String(p.prestige);
+  if (badges.dataset.key !== key) {
+    badges.dataset.key = key;
+    badges.innerHTML = badgeSlots(p.prestige)
+      .map((n) => badgeHtml(n, p.prestige))
+      .join("");
+  }
+  footer.querySelector<HTMLElement>(".level")!.textContent = levelLabel(p);
+  footer.querySelector<HTMLElement>(".xpfill")!.style.width =
+    `${xpBarFraction(p) * 100}%`;
+  resizeRosterContent();
+}
+
 const SCALE_STORAGE_KEY = "mana.scale";
 let scale = restoreScale(localStorage.getItem(SCALE_STORAGE_KEY));
 let appliedSize: { width: number; height: number } | undefined;
@@ -175,8 +199,11 @@ const enqueueSizing = createSerialQueue((error) => {
 
 function resizeRosterContent(): void {
   void enqueueSizing(async () => {
-    const card = document.getElementById("card")!;
-    const size = scaledRosterSize(card.scrollHeight, scale);
+    // Measure the wrapper, not #card, so the progress footer counts toward
+    // the window height. #root itself always fills the viewport, so its
+    // scrollHeight would just echo the current window size back.
+    const content = document.getElementById("content")!;
+    const size = scaledRosterSize(content.scrollHeight, scale);
     const win = getCurrentWindow();
     const position = await win.outerPosition();
     const monitor = await currentMonitor();
@@ -241,6 +268,10 @@ void listen<Snapshot>("usage-update", (e) => {
   renderProvider(e.payload.provider);
 });
 
+void listen<Progress>("progress-update", (e) => {
+  renderProgress(e.payload);
+});
+
 void listen<Activity>("activity", (e) => {
   activity.claude = e.payload.claude ?? false;
   activity.codex = e.payload.codex ?? false;
@@ -251,6 +282,8 @@ void invoke<Snapshot[]>("get_snapshots").then((all) => {
   for (const s of all) snapshots.set(s.provider, s);
   for (const provider of ["claude", "codex"]) renderProvider(provider);
 });
+
+void invoke<Progress>("get_progress").then(renderProgress);
 
 void invoke<Activity>("get_activity").then((a) => {
   activity.claude = a.claude ?? false;

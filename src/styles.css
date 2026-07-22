@@ -30,6 +30,9 @@
      at --meter-inset-y, so its corners follow the same concentric rule. */
   --meter-frame-radius: var(--hud-radius);
   --fill-radius: max(1px, calc(var(--meter-frame-radius) - var(--meter-inset-y)));
+  /* The xp bar nests inside the footer at the corner-tick inset, so its
+     rounding follows the same concentric rule as the tick outline. */
+  --xpbar-radius: max(1px, calc(var(--hud-radius) - var(--corner-tick-inset)));
 }
 
 html,
@@ -91,6 +94,13 @@ body {
   background: linear-gradient(90deg, transparent, rgba(249, 246, 222, 0.72), transparent);
 }
 
+#content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+}
+
 #card {
   position: relative;
   z-index: 1;
@@ -118,6 +128,57 @@ body {
   padding-top: 14px;
   padding-bottom: 6px;
   border-top: 1px solid var(--line);
+}
+
+#progress {
+  /* XP is provider-neutral, so the fill borrows the meter gradient language
+     with the HUD's own silver-and-gold palette. */
+  --c1: var(--gold);
+  --c2: var(--silver);
+  --glow: rgba(242, 201, 104, 0.4);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px 8px;
+  border-top: 1px solid var(--line);
+  color: var(--ink-dim);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 10px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+#progress .badges {
+  display: flex;
+  flex: none;
+  gap: 4px;
+}
+
+#progress .badges:empty {
+  display: none;
+}
+
+#progress .level {
+  flex: none;
+  white-space: nowrap;
+}
+
+#progress .xpbar {
+  flex: 1;
+  height: 3px;
+  min-width: 0;
+  overflow: hidden;
+  border-radius: var(--xpbar-radius);
+  background: rgba(219, 231, 244, 0.14);
+}
+
+#progress .xpfill {
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--c1), var(--c2));
+  box-shadow: 0 0 6px var(--glow);
+  transition: width 0.45s cubic-bezier(0.22, 0.8, 0.28, 1);
 }
 
 .claude {
@@ -435,7 +496,8 @@ body {
     animation: none;
   }
 
-  .fill {
+  .fill,
+  #progress .xpfill {
     transition: none;
   }
 }

@@ -290,7 +290,7 @@ export function badgeSlots(prestige: number): number[];     // [1..min(prestige,
 export function actionKind(p: Progress): "rank-up" | "prestige" | null;
 ```
 
-- [ ] **Step 1: Failing vitest tests** in `src/progress-view.test.ts` (style of `format.test.ts`):
+- [x] **Step 1: Failing vitest tests** in `src/progress-view.test.ts` (style of `format.test.ts`):
 
 ```ts
 import { describe, expect, it } from "vitest";
@@ -325,10 +325,10 @@ describe("progress footer", () => {
 });
 ```
 
-- [ ] **Step 2:** `npm test -- progress-view` → FAIL.
-- [ ] **Step 3:** Implement `progress-view.ts`; wire `main.ts`: `listen<Progress>("progress-update", ...)` + `invoke<Progress>("get_progress")` at boot (same pattern as `get_snapshots`); render into a `#progress` footer strip: `<div id="progress"><span class="badges"></span><span class="level"></span><div class="xpbar"><div class="xpfill"></div></div></div>`; set `document.getElementById("root")!.dataset.rank = p.tier`. Footer CSS: 10px mono font like `.row`, `--line` top border, xpbar reuses the `.fill` gradient language at 3px tall, width set as a percentage from `xpBarFraction`. IMPORTANT: the footer changes `#card`-driven window height — it lives inside `#root`, so `resizeRosterContent()` must measure the full content; change its measurement from `#card` scrollHeight to a wrapper that includes the footer (add `const height = rosterHeight(root.scrollHeight)`-style measurement — keep the existing scale multiplication from the drag-resize work intact).
-- [ ] **Step 4:** `npm test` + `npx tsc --noEmit` → PASS.
-- [ ] **Step 5:** Commit: `feat: progress footer with xp bar`.
+- [x] **Step 2:** `npm test -- progress-view` → FAIL.
+- [x] **Step 3:** Implement `progress-view.ts`; wire `main.ts`: `listen<Progress>("progress-update", ...)` + `invoke<Progress>("get_progress")` at boot (same pattern as `get_snapshots`); render into a `#progress` footer strip: `<div id="progress"><span class="badges"></span><span class="level"></span><div class="xpbar"><div class="xpfill"></div></div></div>`; set `document.getElementById("root")!.dataset.rank = p.tier`. Footer CSS: 10px mono font like `.row`, `--line` top border, xpbar reuses the `.fill` gradient language at 3px tall, width set as a percentage from `xpBarFraction`. IMPORTANT: the footer changes `#card`-driven window height — it lives inside `#root`, so `resizeRosterContent()` must measure the full content; change its measurement from `#card` scrollHeight to a wrapper that includes the footer (add `const height = rosterHeight(root.scrollHeight)`-style measurement — keep the existing scale multiplication from the drag-resize work intact).
+- [x] **Step 4:** `npm test` + `npx tsc --noEmit` → PASS.
+- [x] **Step 5:** Commit: `feat: progress footer with xp bar`.
 
 ---
 
