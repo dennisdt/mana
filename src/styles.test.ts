@@ -60,7 +60,9 @@ describe("fantasy gaming HUD stylesheet", () => {
     expect(artRule).toMatch(/position:\s*absolute/);
     expect(artRule).toMatch(/width:\s*68px/);
     expect(artRule).toMatch(/height:\s*68px/);
-    expect(artRule).toMatch(/top:\s*50%/);
+    expect(artRule).toMatch(
+      /top:\s*calc\(50% \+ var\(--sprite-y-offset,\s*0px\)\)/,
+    );
     expect(artRule).toMatch(/left:\s*50%/);
     expect(artRule).toMatch(/transform:\s*translate\(-50%,\s*-50%\)/);
     expect(artRule).toMatch(/background-image:\s*var\(--sprite-sheet\)/);
@@ -78,6 +80,21 @@ describe("fantasy gaming HUD stylesheet", () => {
       'element.style.setProperty("--sprite-sheet", `url("${url}")`)',
     );
     expect(mainSource).not.toContain("element.style.backgroundImage");
+  });
+
+  it("optically lowers Codex without moving Claude or the provider layout", () => {
+    expect(styles).toMatch(
+      /\.sprite::before\s*\{[^}]*top:\s*calc\(50% \+ var\(--sprite-y-offset,\s*0px\)\)/s,
+    );
+    expect(styles).toMatch(
+      /\.sprite\.codex-mage\s*\{[^}]*--sprite-y-offset:\s*4px/s,
+    );
+    const claudeRule =
+      styles.match(/\.sprite\.claude-mage\s*\{([^}]*)\}/s)?.[1] ?? "";
+    expect(claudeRule).not.toContain("--sprite-y-offset");
+    expect(styles).toMatch(
+      /\.familiar-slot\s*\{[^}]*align-items:\s*center[^}]*justify-content:\s*center/s,
+    );
   });
 
   it("declares fixed frame and live-core geometry", () => {
@@ -189,7 +206,7 @@ describe("rank border themes", () => {
     ["gold", "#f2c968", "#b8862e", "rgba(242, 201, 104, 0.45)"],
     ["platinum", "#dfe9ec", "#9fb6c4", "rgba(223, 233, 236, 0.5)"],
     ["emerald", "#3ddc84", "#147a4a", "rgba(61, 220, 132, 0.5)"],
-    ["diamond", "#9be8ff", "#4aa8d8", "rgba(155, 232, 255, 0.55)"],
+    ["diamond", "#dce7eb", "#7f8d99", "rgba(196, 216, 224, 0.2)"],
     ["master", "#ff5a6e", "#a3172c", "rgba(255, 90, 110, 0.55)"],
     ["legend", "#b06aff", "#5e1ea8", "rgba(176, 106, 255, 0.55)"],
     ["champion", "#ffd75e", "#3f8cff", "rgba(255, 215, 94, 0.6)"],
@@ -365,9 +382,14 @@ describe("rank armor art integration", () => {
     );
     const glow = styles.match(/\.familiar-slot::before\s*\{([^}]*)\}/s)?.[1] ?? "";
     expect(glow).not.toMatch(/\bfilter\s*:/);
-    expect(styles).toMatch(
-      /\.provider-card\[data-working\] \.familiar-slot::before\s*\{[^}]*opacity:[^}]*transform:\s*translate\(-50%, -50%\) scale/s,
-    );
+    expect(glow).toMatch(/transform:\s*translate\(-50%, -50%\)/);
+    expect(glow).not.toMatch(/\bscale\(/);
+    const workingGlow =
+      styles.match(
+        /\.provider-card\[data-working\] \.familiar-slot::before\s*\{([^}]*)\}/s,
+      )?.[1] ?? "";
+    expect(workingGlow).toMatch(/opacity:\s*0\.66/);
+    expect(workingGlow).not.toMatch(/\btransform\s*:/);
     expect(styles).not.toMatch(/\.provider-card\[data-working\] \.sprite\s*\{/);
     expect(styles).not.toMatch(/\.sprite\.(?:claude|codex)-mage\s*\{[^}]*drop-shadow\(0 0/s);
   });

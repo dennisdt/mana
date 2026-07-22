@@ -233,9 +233,8 @@ function renderProgress(p: Progress): void {
   resizeRosterContent();
 }
 
-// The HUD is deliberately enlarged, but the 2x sprite atlases must still
-// land at one source pixel per Retina pixel. Counter-scale only the familiar
-// layer so the rest of the widget keeps its comfortable 1.2x size.
+// The 2x sprite atlases must land at one source pixel per Retina pixel.
+// Counter-scale only the familiar layer if the widget zoom changes again.
 document.documentElement.style.setProperty(
   "--sprite-resolution-scale",
   String(1 / WIDGET_ZOOM),

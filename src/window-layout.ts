@@ -1,9 +1,9 @@
 export const ROSTER_WIDTH = 456;
 export const INITIAL_ROSTER_HEIGHT = 175;
 
-/// The HUD renders at a fixed zoom, slightly above 1, so it reads well at a
-/// distance. The window itself is deliberately not user-resizable.
-export const WIDGET_ZOOM = 1.2;
+/// The HUD renders at its compact authored scale. The window itself is
+/// deliberately not user-resizable.
+export const WIDGET_ZOOM = 1;
 
 type Point = { x: number; y: number };
 type Size = { width: number; height: number };

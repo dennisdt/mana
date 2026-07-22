@@ -379,15 +379,12 @@ body {
   content: "";
   opacity: 0.34;
   pointer-events: none;
-  transform: translate(-50%, -50%) scale(0.94);
-  transition:
-    opacity 0.24s ease,
-    transform 0.24s ease;
+  transform: translate(-50%, -50%);
+  transition: opacity 0.24s ease;
 }
 
 .provider-card[data-working] .familiar-slot::before {
   opacity: 0.66;
-  transform: translate(-50%, -50%) scale(1.08);
 }
 
 .provider-content,
@@ -578,7 +575,7 @@ body {
 
 .sprite::before {
   position: absolute;
-  top: 50%;
+  top: calc(50% + var(--sprite-y-offset, 0px));
   left: 50%;
   width: 68px;
   height: 68px;
@@ -613,6 +610,7 @@ body {
 
 .sprite.codex-mage {
   --sprite-sheet: url("/sprites/codex-ice-lightning.png");
+  --sprite-y-offset: 4px;
 }
 
 .sprite[data-state="idle"]::before {
@@ -738,11 +736,11 @@ body {
 #root[data-rank="diamond"],
 #ceremony[data-tier="diamond"] {
   --meter-frame-art: url("/hud/mana-bar-frame-diamond.png");
-  --frame-1: #9be8ff;
-  --frame-2: #4aa8d8;
+  --frame-1: #dce7eb;
+  --frame-2: #7f8d99;
   --ring: linear-gradient(160deg, var(--frame-1), var(--frame-2));
   --frame-w: 2px;
-  --frame-glow: rgba(155, 232, 255, 0.55);
+  --frame-glow: rgba(196, 216, 224, 0.2);
 }
 
 #root[data-rank="master"],

@@ -19,11 +19,11 @@ describe("permanent roster geometry", () => {
     const mainWindow = tauriConfig.app.windows.find(
       ({ label }) => label === "main",
     );
-    // The config window opens at the fixed zoom so first paint matches what
-    // the frontend immediately resizes to.
+    // The config window opens at the compact fixed zoom so first paint
+    // matches what the frontend immediately resizes to.
     expect(mainWindow).toMatchObject({
-      width: Math.round(ROSTER_WIDTH * WIDGET_ZOOM),
-      height: Math.ceil(INITIAL_ROSTER_HEIGHT * WIDGET_ZOOM),
+      width: 456,
+      height: 175,
     });
   });
 
@@ -85,13 +85,13 @@ describe("fixed widget zoom", () => {
     expect(mainWindow).not.toHaveProperty("maxWidth");
   });
 
-  it("renders at a comfortable fixed 1.2 zoom", () => {
-    expect(WIDGET_ZOOM).toBe(1.2);
+  it("renders at the compact fixed 1.0 zoom", () => {
+    expect(WIDGET_ZOOM).toBe(1);
   });
 
   it("scales the roster size to whole logical pixels at the fixed zoom", () => {
     expect(scaledRosterSize(207.2, 1)).toEqual({ width: 456, height: 210 });
-    expect(scaledRosterSize(207.2, WIDGET_ZOOM)).toEqual({ width: 547, height: 252 });
+    expect(scaledRosterSize(207.2, WIDGET_ZOOM)).toEqual({ width: 456, height: 210 });
   });
 });
 
