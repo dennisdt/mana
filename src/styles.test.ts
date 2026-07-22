@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const styles = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
+const librs = readFileSync(new URL("../src-tauri/src/lib.rs", import.meta.url), "utf8");
 
 describe("fantasy gaming HUD stylesheet", () => {
   it("uses only the original generated frame", () => {
@@ -102,5 +103,35 @@ describe("fantasy gaming HUD stylesheet", () => {
       /#card section:not\(\[hidden\]\) \+ section:not\(\[hidden\]\)\s*\{[^}]*padding-top:\s*14px[^}]*border-top:\s*1px solid var\(--line\)/s,
     );
     expect(styles).not.toMatch(/#card section \+ section\s*\{/);
+  });
+});
+
+describe("concentric nested corner radii", () => {
+  it("keeps the vibrancy blur radius equal to the CSS --hud-radius", () => {
+    const cssRadius = styles.match(/--hud-radius:\s*(\d+(?:\.\d+)?)px/)?.[1];
+    const rustRadius = librs.match(/HUD_CORNER_RADIUS:\s*f64\s*=\s*(\d+(?:\.\d+)?)/)?.[1];
+    expect(cssRadius).toBeDefined();
+    expect(rustRadius).toBeDefined();
+    expect(Number(rustRadius)).toBe(Number(cssRadius));
+    expect(librs).toMatch(/apply_vibrancy\([^;]*Some\(HUD_CORNER_RADIUS\),\s*\)\?;/s);
+  });
+
+  it("derives the corner tick radius as HUD radius minus tick inset", () => {
+    expect(styles).toContain("--corner-tick-inset: 5px");
+    expect(styles).toContain(
+      "--corner-tick-radius: max(0px, calc(var(--hud-radius) - var(--corner-tick-inset)))",
+    );
+    expect(styles).toMatch(
+      /#root::before\s*\{[^}]*inset:\s*var\(--corner-tick-inset\)[^}]*border-radius:\s*var\(--corner-tick-radius\)/s,
+    );
+  });
+
+  it("derives the fill radius as meter frame radius minus its vertical inset", () => {
+    expect(styles).toContain("--meter-frame-radius: var(--hud-radius)");
+    expect(styles).toContain(
+      "--fill-radius: max(1px, calc(var(--meter-frame-radius) - var(--meter-inset-y)))",
+    );
+    expect(styles).toMatch(/\.fill\s*\{[^}]*border-radius:\s*var\(--fill-radius\)/s);
+    expect(styles).not.toMatch(/border-radius:\s*\d/);
   });
 });

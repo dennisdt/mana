@@ -13,13 +13,23 @@
   --low-1: #ff6c7f;
   --low-2: #ff365d;
   --low-glow: rgba(255, 54, 93, 0.58);
+  /* Concentric corners: inner radius = outer radius - inset, clamped at a
+     small minimum. --hud-radius must stay equal to HUD_CORNER_RADIUS in
+     src-tauri/src/lib.rs (the vibrancy blur layer), or the blur corner and
+     the CSS border corner visibly diverge. */
   --hud-radius: 8px;
+  --corner-tick-inset: 5px;
+  --corner-tick-radius: max(0px, calc(var(--hud-radius) - var(--corner-tick-inset)));
   --meter-width: 144px;
   --meter-height: 20px;
   --meter-inset-x: 14px;
   --meter-inset-y: 6px;
   --meter-channel-width: 116px;
   --meter-channel-height: 8px;
+  /* Corner rounding drawn into mana-bar-frame.png; the fill nests inside it
+     at --meter-inset-y, so its corners follow the same concentric rule. */
+  --meter-frame-radius: var(--hud-radius);
+  --fill-radius: max(1px, calc(var(--meter-frame-radius) - var(--meter-inset-y)));
 }
 
 html,
@@ -64,7 +74,8 @@ body {
 }
 
 #root::before {
-  inset: 5px;
+  inset: var(--corner-tick-inset);
+  border-radius: var(--corner-tick-radius);
   background:
     linear-gradient(90deg, rgba(219, 231, 244, 0.58), rgba(219, 231, 244, 0.58)) left top / 20px 1px no-repeat,
     linear-gradient(180deg, rgba(219, 231, 244, 0.58), rgba(219, 231, 244, 0.58)) left top / 1px 9px no-repeat,
@@ -283,7 +294,7 @@ body {
   max-width: var(--meter-channel-width);
   height: var(--meter-channel-height);
   overflow: hidden;
-  border-radius: 2px;
+  border-radius: var(--fill-radius);
   background: linear-gradient(90deg, var(--c1), var(--c2));
   box-shadow:
     0 0 4px var(--glow),

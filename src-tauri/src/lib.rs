@@ -22,6 +22,11 @@ tauri_panel! {
     })
 }
 
+/// Corner radius (points) of the macOS vibrancy blur layer. Must stay equal
+/// to `--hud-radius` in `src/styles.css`, or the blur's rounded corner and
+/// the CSS border corner visibly diverge.
+const HUD_CORNER_RADIUS: f64 = 8.0;
+
 fn tray_template_icon() -> tauri::Result<tauri::image::Image<'static>> {
     tauri::image::Image::from_bytes(include_bytes!("../icons/tray-template.png"))
         .map(tauri::image::Image::to_owned)
@@ -50,7 +55,7 @@ pub fn run() {
                 &window,
                 NSVisualEffectMaterial::HudWindow,
                 Some(NSVisualEffectState::Active),
-                Some(8.0),
+                Some(HUD_CORNER_RADIUS),
             )?;
 
             // Non-activating floating panel: hovers over every window and
@@ -104,7 +109,17 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::tray_template_icon;
+    use super::{tray_template_icon, HUD_CORNER_RADIUS};
+
+    #[test]
+    fn vibrancy_radius_matches_css_hud_radius() {
+        let css = include_str!("../../src/styles.css");
+        let expected = format!("--hud-radius: {HUD_CORNER_RADIUS}px;");
+        assert!(
+            css.contains(&expected),
+            "--hud-radius in src/styles.css must equal HUD_CORNER_RADIUS ({HUD_CORNER_RADIUS}px)"
+        );
+    }
 
     #[test]
     fn tray_template_asset_has_expected_geometry() {
