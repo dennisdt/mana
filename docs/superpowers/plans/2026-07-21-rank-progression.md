@@ -143,7 +143,7 @@ Rules the implementation MUST honor (each is a test):
 3. Re-scanning an unchanged tree changes nothing (idempotence).
 4. Appending to a scanned file adds only the delta.
 
-- [ ] **Step 1: Write failing tests** (same `tests` mod). Test skeleton showing the fixture idiom and the four rules:
+- [x] **Step 1: Write failing tests** (same `tests` mod). Test skeleton showing the fixture idiom and the four rules:
 
 ```rust
 fn write(path: &std::path::Path, contents: &str) {
@@ -178,10 +178,10 @@ fn claude_scan_sums_all_usage_fields_and_is_idempotent() {
 
 Plus the codex mirror test: one file containing the 20k event then (after first scan) an appended event with `"total_tokens":20900` → totals go 20000 → 20900 (delta 900, not 40900); and a fresh `TallyState` given a file whose latest total is smaller than a stored `codex_totals` entry contributes 0.
 
-- [ ] **Step 2:** `cargo test tally` → FAIL.
-- [ ] **Step 3:** Implement. Notes: recurse with a small manual stack (no walkdir dep); read with `std::fs::File` + `Seek` to offset; `serde_json::from_str::<serde_json::Value>` per line; extract via `.get(...).and_then(|v| v.as_u64())` chains. For codex, search `payload.info.total_token_usage.total_tokens` and also tolerate the field at `info.total_token_usage` directly (both shapes exist in the wild).
-- [ ] **Step 4:** `cargo test` → PASS (Task 1 tests still green).
-- [ ] **Step 5:** Commit: `feat: incremental token tally scanner`.
+- [x] **Step 2:** `cargo test tally` → FAIL.
+- [x] **Step 3:** Implement. Notes: recurse with a small manual stack (no walkdir dep); read with `std::fs::File` + `Seek` to offset; `serde_json::from_str::<serde_json::Value>` per line; extract via `.get(...).and_then(|v| v.as_u64())` chains. For codex, search `payload.info.total_token_usage.total_tokens` and also tolerate the field at `info.total_token_usage` directly (both shapes exist in the wild).
+- [x] **Step 4:** `cargo test` → PASS (Task 1 tests still green).
+- [x] **Step 5:** Commit: `feat: incremental token tally scanner`.
 
 ---
 
