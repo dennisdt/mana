@@ -63,7 +63,11 @@ pub fn run() {
             // fullscreen Space without ever stealing keyboard focus.
             let panel = window.to_panel::<ManaPanel>()?;
             panel.set_level(PanelLevel::Floating.value());
-            panel.set_style_mask(StyleMask::empty().nonactivating_panel().into());
+            // set_style_mask REPLACES the mask the window was created with,
+            // so tauri.conf.json's `resizable: true` is wiped here unless the
+            // Resizable bit is re-asserted — without it macOS offers no edge
+            // resize handles and drag-to-scale silently dies.
+            panel.set_style_mask(StyleMask::empty().nonactivating_panel().resizable().into());
             panel.set_collection_behavior(
                 CollectionBehavior::new()
                     .can_join_all_spaces()
