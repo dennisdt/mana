@@ -25,8 +25,11 @@ describe("Mana product identity", () => {
     expect(cargoToml).toMatch(/^name = "mana"$/m);
     expect(html).toContain("<title>Mana</title>");
     expect(readme).toMatch(/^# Mana$/m);
-    expect(readme).toContain("Both are read-only: Mana re-reads credentials");
-    expect(readme).toContain("bundle/macos/Mana.app /Applications/");
+    expect(readme).toContain("Credential access is read-only.");
+    expect(readme).toContain(
+      "Mana re-reads credentials for each poll and never writes or refreshes them.",
+    );
+    expect(readme).toContain("src-tauri/target/release/bundle/macos/Mana.app");
   });
 
   it("keeps release version 0.4.5 synchronized", () => {
