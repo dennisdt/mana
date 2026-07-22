@@ -135,3 +135,104 @@ describe("concentric nested corner radii", () => {
     expect(styles).not.toMatch(/border-radius:\s*\d/);
   });
 });
+
+describe("rank border themes", () => {
+  const tiers: Array<[string, string, string, string]> = [
+    ["plastic", "#b8bec8", "#8b929e", "transparent"],
+    ["wood", "#a5713d", "#6b4726", "transparent"],
+    ["iron", "#9aa3ad", "#5f6770", "rgba(154, 163, 173, 0.25)"],
+    ["bronze", "#cd7f32", "#8c5a24", "rgba(205, 127, 50, 0.3)"],
+    ["silver", "#e6edf5", "#97a3b4", "rgba(230, 237, 245, 0.35)"],
+    ["gold", "#f2c968", "#b8862e", "rgba(242, 201, 104, 0.45)"],
+    ["platinum", "#dfe9ec", "#9fb6c4", "rgba(223, 233, 236, 0.5)"],
+    ["emerald", "#3ddc84", "#147a4a", "rgba(61, 220, 132, 0.5)"],
+    ["diamond", "#9be8ff", "#4aa8d8", "rgba(155, 232, 255, 0.55)"],
+    ["master", "#ff5a6e", "#a3172c", "rgba(255, 90, 110, 0.55)"],
+    ["legend", "#b06aff", "#5e1ea8", "rgba(176, 106, 255, 0.55)"],
+    ["champion", "#ffd75e", "#3f8cff", "rgba(255, 215, 94, 0.6)"],
+    ["godlike", "#fff6d8", "#ffd9f6", "rgba(255, 246, 216, 0.75)"],
+  ];
+
+  it("themes every dressed tier with frame custom properties", () => {
+    for (const [tier, frame1, frame2, glow] of tiers) {
+      const rule =
+        styles.match(new RegExp(`#root\\[data-rank="${tier}"\\][^{]*\\{([^}]*)\\}`, "s"))?.[1] ??
+        "";
+      expect(rule, tier).toContain(`--frame-1: ${frame1}`);
+      expect(rule, tier).toContain(`--frame-2: ${frame2}`);
+      expect(rule, tier).toContain(`--frame-glow: ${glow}`);
+    }
+  });
+
+  it("consumes the frame variables from one shared border rule", () => {
+    expect(styles).toMatch(
+      /#root\s*\{[^}]*border:\s*1px solid var\(--frame-1, rgba\(205, 221, 242, 0\.34\)\)/s,
+    );
+    expect(styles).toMatch(/#root\s*\{[^}]*0 0 14px var\(--frame-glow, transparent\)/s);
+    expect(styles).toMatch(/#root\s*\{[^}]*0 0 30px var\(--frame-glow-2, transparent\)/s);
+  });
+
+  it("keeps naked and unranked roots borderless without corner ticks", () => {
+    expect(styles).toMatch(
+      /#root:not\(\[data-rank\]\)[^{]*\{[^}]*border-color:\s*transparent/s,
+    );
+    expect(styles).toMatch(/#root\[data-rank="naked"\][^{]*\{[^}]*border-color:\s*transparent/s);
+    expect(styles).toMatch(/#root:not\(\[data-rank\]\)::before[^{]*\{[^}]*content:\s*none/s);
+    expect(styles).toMatch(/#root\[data-rank="naked"\]::before[^{]*\{[^}]*content:\s*none/s);
+  });
+
+  it("gives metallic tiers a gradient border image", () => {
+    for (const tier of ["iron", "bronze", "silver", "gold", "platinum"]) {
+      expect(styles, tier).toMatch(
+        new RegExp(
+          `#root\\[data-rank="${tier}"\\][^{]*\\{[^}]*border-image:\\s*linear-gradient\\(160deg, var\\(--frame-1\\), var\\(--frame-2\\)\\) 1`,
+          "s",
+        ),
+      );
+    }
+  });
+
+  it("animates champion radiance and stills it under reduced motion", () => {
+    expect(styles).toContain("@keyframes champion-radiance");
+    expect(styles).toMatch(
+      /#root\[data-rank="champion"\]\s*\{[^}]*animation:\s*champion-radiance 6s linear infinite/s,
+    );
+    const reducedMotion = styles.slice(
+      styles.indexOf("@media (prefers-reduced-motion: reduce)"),
+    );
+    expect(reducedMotion).toContain('#root[data-rank="champion"]');
+  });
+
+  it("adds the godlike second outer glow", () => {
+    expect(styles).toMatch(
+      /#root\[data-rank="godlike"\][^{]*\{[^}]*--frame-glow-2:\s*rgba\(190, 225, 255, 0\.4\)/s,
+    );
+  });
+});
+
+describe("prestige badge fallbacks", () => {
+  it("sizes badges and maps each slot to its art", () => {
+    const badge = styles.match(/\.badge\s*\{([^}]*)\}/s)?.[1] ?? "";
+    expect(badge).toMatch(/width:\s*24px/);
+    expect(badge).toMatch(/height:\s*24px/);
+    for (let n = 1; n <= 10; n += 1) {
+      expect(styles).toContain(`url("/badges/prestige-${n}.png")`);
+    }
+  });
+
+  it("shows a tinted star only when the badge art is absent", () => {
+    expect(styles).toMatch(/\.badge\[data-fallback="true"\]::after\s*\{[^}]*content:\s*"★"/s);
+    expect(styles).toMatch(/\.badge\[data-n="1"\][^{]*\{[^}]*--badge-tint:\s*#dbe7f4/s);
+    expect(styles).toMatch(/\.badge\[data-n="4"\][^{]*\{[^}]*--badge-tint:\s*#f2c968/s);
+    expect(styles).toMatch(/\.badge\[data-n="7"\][^{]*\{[^}]*--badge-tint:\s*#9be8ff/s);
+    expect(styles).toMatch(
+      /\.badge\[data-n="10"\]\[data-fallback="true"\]::after\s*\{[^}]*background-clip:\s*text/s,
+    );
+  });
+
+  it("renders the overflow count as a superscript on the tenth badge", () => {
+    expect(styles).toMatch(
+      /\.badge\[data-count\]::before\s*\{[^}]*content:\s*attr\(data-count\)/s,
+    );
+  });
+});

@@ -290,7 +290,7 @@ export function badgeSlots(prestige: number): number[];     // [1..min(prestige,
 export function actionKind(p: Progress): "rank-up" | "prestige" | null;
 ```
 
-- [ ] **Step 1: Failing vitest tests** in `src/progress-view.test.ts` (style of `format.test.ts`):
+- [x] **Step 1: Failing vitest tests** in `src/progress-view.test.ts` (style of `format.test.ts`):
 
 ```ts
 import { describe, expect, it } from "vitest";
@@ -325,10 +325,10 @@ describe("progress footer", () => {
 });
 ```
 
-- [ ] **Step 2:** `npm test -- progress-view` → FAIL.
-- [ ] **Step 3:** Implement `progress-view.ts`; wire `main.ts`: `listen<Progress>("progress-update", ...)` + `invoke<Progress>("get_progress")` at boot (same pattern as `get_snapshots`); render into a `#progress` footer strip: `<div id="progress"><span class="badges"></span><span class="level"></span><div class="xpbar"><div class="xpfill"></div></div></div>`; set `document.getElementById("root")!.dataset.rank = p.tier`. Footer CSS: 10px mono font like `.row`, `--line` top border, xpbar reuses the `.fill` gradient language at 3px tall, width set as a percentage from `xpBarFraction`. IMPORTANT: the footer changes `#card`-driven window height — it lives inside `#root`, so `resizeRosterContent()` must measure the full content; change its measurement from `#card` scrollHeight to a wrapper that includes the footer (add `const height = rosterHeight(root.scrollHeight)`-style measurement — keep the existing scale multiplication from the drag-resize work intact).
-- [ ] **Step 4:** `npm test` + `npx tsc --noEmit` → PASS.
-- [ ] **Step 5:** Commit: `feat: progress footer with xp bar`.
+- [x] **Step 2:** `npm test -- progress-view` → FAIL.
+- [x] **Step 3:** Implement `progress-view.ts`; wire `main.ts`: `listen<Progress>("progress-update", ...)` + `invoke<Progress>("get_progress")` at boot (same pattern as `get_snapshots`); render into a `#progress` footer strip: `<div id="progress"><span class="badges"></span><span class="level"></span><div class="xpbar"><div class="xpfill"></div></div></div>`; set `document.getElementById("root")!.dataset.rank = p.tier`. Footer CSS: 10px mono font like `.row`, `--line` top border, xpbar reuses the `.fill` gradient language at 3px tall, width set as a percentage from `xpBarFraction`. IMPORTANT: the footer changes `#card`-driven window height — it lives inside `#root`, so `resizeRosterContent()` must measure the full content; change its measurement from `#card` scrollHeight to a wrapper that includes the footer (add `const height = rosterHeight(root.scrollHeight)`-style measurement — keep the existing scale multiplication from the drag-resize work intact).
+- [x] **Step 4:** `npm test` + `npx tsc --noEmit` → PASS.
+- [x] **Step 5:** Commit: `feat: progress footer with xp bar`.
 
 ---
 
@@ -348,11 +348,11 @@ export function romanNumeral(n: number): string; // 1..=20 ("I".."XX"), else Str
 export function nextTier(p: Progress): string | null; // TIERS[rank+1] or null at godlike
 ```
 
-- [ ] **Step 1: Failing tests** — `romanNumeral(4) === "IV"`, `romanNumeral(9) === "IX"`, `nextTier` at rank 0 → "plastic", at 13 → null, `dialogCopy("rank-up", {...rank: 5, level: 36})` title `"ASCEND TO GOLD"`, `dialogCopy("prestige", {...prestige: 1})` title `"PRESTIGE II"`.
-- [ ] **Step 2:** `npm test -- progress-view` → FAIL.
-- [ ] **Step 3:** Implement copy helpers. `index.html`: `<button id="action" hidden></button>` positioned absolute top-right inside `#root`, and `<div id="ceremony" hidden><div class="ceremony-panel"><h1></h1><p></p><button class="confirm"></button><button class="later">Later</button></div></div>` overlay. `main.ts`: on each progress render, `action.hidden = actionKind(p) === null`, label from kind; click → fill ceremony from `dialogCopy`, set `ceremony.dataset.kind` and `ceremony.dataset.tier` (next tier for rank-up, `prestige-${n}` for prestige), unhide; confirm → `invoke("rank_up")` / `invoke("prestige")`, re-render from the returned Progress, and if `actionKind` is still non-null leave the button glowing (one ceremony per click). **Drag-region caveat:** `#root` has `data-tauri-drag-region="deep"` — the button and ceremony panel must call `event.stopPropagation()` on `mousedown` so clicks don't start a window drag; the ceremony backdrop keeps drag alive. CSS: `#action` is a small gold-rimmed glowing pill (pulse animation reusing the `status-pulse` keyframes, `animation` respecting the existing `prefers-reduced-motion` block); `#ceremony` is `position: fixed; inset: 0; z-index: 10` with a radial-gradient scrim, ornate double-border panel using `--hud-radius` concentric math, tier-tinted via the same `--c1/--c2` custom-property pattern the provider cards use.
-- [ ] **Step 4:** `npm test` + `npx tsc --noEmit` → PASS.
-- [ ] **Step 5:** Commit: `feat: rank up and prestige ceremonies`.
+- [x] **Step 1: Failing tests** — `romanNumeral(4) === "IV"`, `romanNumeral(9) === "IX"`, `nextTier` at rank 0 → "plastic", at 13 → null, `dialogCopy("rank-up", {...rank: 5, level: 36})` title `"ASCEND TO GOLD"`, `dialogCopy("prestige", {...prestige: 1})` title `"PRESTIGE II"`.
+- [x] **Step 2:** `npm test -- progress-view` → FAIL.
+- [x] **Step 3:** Implement copy helpers. `index.html`: `<button id="action" hidden></button>` positioned absolute top-right inside `#root`, and `<div id="ceremony" hidden><div class="ceremony-panel"><h1></h1><p></p><button class="confirm"></button><button class="later">Later</button></div></div>` overlay. `main.ts`: on each progress render, `action.hidden = actionKind(p) === null`, label from kind; click → fill ceremony from `dialogCopy`, set `ceremony.dataset.kind` and `ceremony.dataset.tier` (next tier for rank-up, `prestige-${n}` for prestige), unhide; confirm → `invoke("rank_up")` / `invoke("prestige")`, re-render from the returned Progress, and if `actionKind` is still non-null leave the button glowing (one ceremony per click). **Drag-region caveat:** `#root` has `data-tauri-drag-region="deep"` — the button and ceremony panel must call `event.stopPropagation()` on `mousedown` so clicks don't start a window drag; the ceremony backdrop keeps drag alive. CSS: `#action` is a small gold-rimmed glowing pill (pulse animation reusing the `status-pulse` keyframes, `animation` respecting the existing `prefers-reduced-motion` block); `#ceremony` is `position: fixed; inset: 0; z-index: 10` with a radial-gradient scrim, ornate double-border panel using `--hud-radius` concentric math, tier-tinted via the same `--c1/--c2` custom-property pattern the provider cards use.
+- [x] **Step 4:** `npm test` + `npx tsc --noEmit` → PASS.
+- [x] **Step 5:** Commit: `feat: rank up and prestige ceremonies`.
 
 ---
 
@@ -385,8 +385,8 @@ Champion additionally animates its border-image gradient angle (reuse a keyframe
 
 Badge fallback (until Codex art lands): `.badge { width: 24px; height: 24px; }` rendered as `background-image: url("/badges/prestige-<n>.png")` **plus** a CSS `::after` star glyph (`content: "★"`) that is visible only when the image is absent — implement by setting the `<span class="badge" data-n="3">` text/star in JS when an `Image()` probe fails (same probe helper Task 7 adds). Star tint cycles: n 1–3 silver `#dbe7f4`, 4–6 gold `#f2c968`, 7–9 diamond `#9be8ff`, 10 champion gradient text via `background-clip: text`. Prestige >10: the 10th badge gets a `data-count` attribute rendered as a small superscript via `::before { content: attr(data-count); }`.
 
-- [ ] **Step 1: Failing styles tests** — extend `src/styles.test.ts` in its existing raw-CSS-text style: every tier in the table above has a `#root[data-rank="…"]` rule; naked kills `::before` ticks; `champion-radiance` keyframes exist AND are referenced inside the `prefers-reduced-motion` block; the shared border rule consumes `var(--frame-1`/`--frame-glow`.
-- [ ] **Step 2:** `npm test -- styles` → FAIL. **Step 3:** Implement. **Step 4:** `npm test` → PASS. **Step 5:** Commit: `feat: rank border themes and badge fallbacks`.
+- [x] **Step 1: Failing styles tests** — extend `src/styles.test.ts` in its existing raw-CSS-text style: every tier in the table above has a `#root[data-rank="…"]` rule; naked kills `::before` ticks; `champion-radiance` keyframes exist AND are referenced inside the `prefers-reduced-motion` block; the shared border rule consumes `var(--frame-1`/`--frame-glow`.
+- [x] **Step 2:** `npm test -- styles` → FAIL. **Step 3:** Implement. **Step 4:** `npm test` → PASS. **Step 5:** Commit: `feat: rank border themes and badge fallbacks`.
 
 ---
 
@@ -406,9 +406,9 @@ export function probeImage(url: string): Promise<boolean>; // Image() onload/one
 export async function resolveSheet(provider: string, tier: string): Promise<string>; // rank sheet if probe succeeds else defaultSheet
 ```
 
-- [ ] **Step 1: Failing tests** (vitest; for `probeImage`/`resolveSheet` stub `globalThis.Image` with a class whose `set src` schedules onload/onerror by URL pattern — follow the DOM-stubbing style used in `view.test.ts`): `rankSheetUrl("claude","silver")` exact path; `resolveSheet` falls back when probe rejects; resolves rank sheet when probe succeeds.
-- [ ] **Step 2:** FAIL. **Step 3:** Implement; in `main.ts` after each rank change: `resolveSheet(provider, tier).then((url) => sprites.forEach((el) => el.style.backgroundImage = `url("${url}")`))`. Keep `background-size: 224px 168px` untouched — rank sheets share the geometry. Extend `src/sprites.test.ts`: glob `public/sprites/*-rank-*.png` (Node `readdirSync`) and run `verifyAtlas` on each existing file, so every future Codex drop is validated automatically; zero matching files must not fail the suite.
-- [ ] **Step 4:** `npm test` + `npx tsc --noEmit` → PASS. **Step 5:** Commit: `feat: per-rank sprite sheets with fallback`.
+- [x] **Step 1: Failing tests** (vitest; for `probeImage`/`resolveSheet` stub `globalThis.Image` with a class whose `set src` schedules onload/onerror by URL pattern — follow the DOM-stubbing style used in `view.test.ts`): `rankSheetUrl("claude","silver")` exact path; `resolveSheet` falls back when probe rejects; resolves rank sheet when probe succeeds.
+- [x] **Step 2:** FAIL. **Step 3:** Implement; in `main.ts` after each rank change: `resolveSheet(provider, tier).then((url) => sprites.forEach((el) => el.style.backgroundImage = `url("${url}")`))`. Keep `background-size: 224px 168px` untouched — rank sheets share the geometry. Extend `src/sprites.test.ts`: glob `public/sprites/*-rank-*.png` (Node `readdirSync`) and run `verifyAtlas` on each existing file, so every future Codex drop is validated automatically; zero matching files must not fail the suite.
+- [x] **Step 4:** `npm test` + `npx tsc --noEmit` → PASS. **Step 5:** Commit: `feat: per-rank sprite sheets with fallback`.
 
 ---
 

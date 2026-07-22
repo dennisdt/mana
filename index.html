@@ -9,9 +9,25 @@
   </head>
   <body>
     <div id="root" data-tauri-drag-region="deep">
-      <div id="card">
-        <section id="card-claude" class="provider-card claude"></section>
-        <section id="card-codex" class="provider-card codex"></section>
+      <div id="content">
+        <div id="card">
+          <section id="card-claude" class="provider-card claude"></section>
+          <section id="card-codex" class="provider-card codex"></section>
+        </div>
+        <div id="progress">
+          <span class="badges"></span>
+          <span class="level"></span>
+          <div class="xpbar"><div class="xpfill"></div></div>
+        </div>
+      </div>
+      <button id="action" hidden></button>
+      <div id="ceremony" hidden>
+        <div class="ceremony-panel">
+          <h1></h1>
+          <p></p>
+          <button class="confirm"></button>
+          <button class="later">Later</button>
+        </div>
       </div>
     </div>
   </body>

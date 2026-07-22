@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { probeImage, resolveSheet } from "./cosmetics";
 import {
   currentMonitor,
   getCurrentWindow,
@@ -8,6 +9,15 @@ import {
 } from "@tauri-apps/api/window";
 import { fmtAge, fmtCountdown, manaLeft, planLabel } from "./format";
 import { meterFillPixels } from "./meter";
+import {
+  actionKind,
+  badgeSlots,
+  dialogCopy,
+  levelLabel,
+  nextTier,
+  xpBarFraction,
+  type Progress,
+} from "./progress-view";
 import {
   spriteFrameAt,
   spriteFrameDelayAt,
@@ -139,6 +149,8 @@ function renderProvider(provider: string): void {
   if (card.dataset.key !== key) {
     card.dataset.key = key;
     card.innerHTML = cardHtml(s, provider);
+    // Rebuilt sprites fall back to the CSS default sheet; re-dress them.
+    applySheets();
   }
   const stale = s?.status === "stale";
   card.classList.toggle("stale", stale === true);
@@ -159,6 +171,69 @@ function tick(): void {
   });
 }
 
+const sheetUrls: Record<string, string | undefined> = {};
+let sheetTier: string | undefined;
+
+function applySheets(): void {
+  for (const provider of ["claude", "codex"]) {
+    const url = sheetUrls[provider];
+    if (!url) continue;
+    document
+      .querySelectorAll<HTMLElement>(`.sprite[data-provider="${provider}"]`)
+      .forEach((element) => {
+        element.style.backgroundImage = `url("${url}")`;
+      });
+  }
+}
+
+function updateRankSheets(tier: string): void {
+  if (sheetTier === tier) return;
+  sheetTier = tier;
+  for (const provider of ["claude", "codex"]) {
+    void resolveSheet(provider, tier).then((url) => {
+      sheetUrls[provider] = url;
+      applySheets();
+    });
+  }
+}
+
+function badgeHtml(n: number, prestige: number): string {
+  // Beyond ten prestiges the tenth badge carries the total as an overlay.
+  const count = n === 10 && prestige > 10 ? ` data-count="${prestige}"` : "";
+  return `<span class="badge" data-n="${n}"${count} aria-hidden="true"></span>`;
+}
+
+let progress: Progress | undefined;
+
+function renderProgress(p: Progress): void {
+  progress = p;
+  document.getElementById("root")!.dataset.rank = p.tier;
+  const kind = actionKind(p);
+  const action = document.getElementById("action")!;
+  action.hidden = kind === null;
+  if (kind) action.textContent = dialogCopy(kind, p).confirm;
+  const footer = document.getElementById("progress")!;
+  const badges = footer.querySelector<HTMLElement>(".badges")!;
+  const key = String(p.prestige);
+  if (badges.dataset.key !== key) {
+    badges.dataset.key = key;
+    badges.innerHTML = badgeSlots(p.prestige)
+      .map((n) => badgeHtml(n, p.prestige))
+      .join("");
+    badges.querySelectorAll<HTMLElement>(".badge").forEach((badge) => {
+      // Missing badge art reveals the CSS star fallback instead of a gap.
+      void probeImage(`/badges/prestige-${badge.dataset.n}.png`).then((exists) => {
+        if (!exists) badge.dataset.fallback = "true";
+      });
+    });
+  }
+  footer.querySelector<HTMLElement>(".level")!.textContent = levelLabel(p);
+  footer.querySelector<HTMLElement>(".xpfill")!.style.width =
+    `${xpBarFraction(p) * 100}%`;
+  updateRankSheets(p.tier);
+  resizeRosterContent();
+}
+
 const SCALE_STORAGE_KEY = "mana.scale";
 let scale = restoreScale(localStorage.getItem(SCALE_STORAGE_KEY));
 let appliedSize: { width: number; height: number } | undefined;
@@ -175,8 +250,11 @@ const enqueueSizing = createSerialQueue((error) => {
 
 function resizeRosterContent(): void {
   void enqueueSizing(async () => {
-    const card = document.getElementById("card")!;
-    const size = scaledRosterSize(card.scrollHeight, scale);
+    // Measure the wrapper, not #card, so the progress footer counts toward
+    // the window height. #root itself always fills the viewport, so its
+    // scrollHeight would just echo the current window size back.
+    const content = document.getElementById("content")!;
+    const size = scaledRosterSize(content.scrollHeight, scale);
     const win = getCurrentWindow();
     const position = await win.outerPosition();
     const monitor = await currentMonitor();
@@ -236,9 +314,55 @@ void getCurrentWindow().onResized(({ payload }) => {
   }, 250);
 });
 
+const actionButton = document.getElementById("action")!;
+const ceremony = document.getElementById("ceremony")!;
+
+// #root is one deep Tauri drag region; interactive controls must swallow
+// mousedown or every click starts a window drag. The ceremony backdrop
+// deliberately stays draggable.
+actionButton.addEventListener("mousedown", (event) => event.stopPropagation());
+ceremony
+  .querySelector<HTMLElement>(".ceremony-panel")!
+  .addEventListener("mousedown", (event) => event.stopPropagation());
+
+function openCeremony(kind: "rank-up" | "prestige", p: Progress): void {
+  const copy = dialogCopy(kind, p);
+  ceremony.dataset.kind = kind;
+  ceremony.dataset.tier =
+    kind === "rank-up" ? (nextTier(p) ?? p.tier) : `prestige-${p.prestige + 1}`;
+  ceremony.querySelector<HTMLElement>("h1")!.textContent = copy.title;
+  ceremony.querySelector<HTMLElement>("p")!.textContent = copy.body;
+  ceremony.querySelector<HTMLElement>(".confirm")!.textContent = copy.confirm;
+  ceremony.hidden = false;
+}
+
+actionButton.addEventListener("click", () => {
+  if (!progress) return;
+  const kind = actionKind(progress);
+  if (kind) openCeremony(kind, progress);
+});
+
+ceremony.querySelector<HTMLElement>(".confirm")!.addEventListener("click", () => {
+  // One ceremony per click: re-render leaves the button glowing when more
+  // gates are already crossed, and the user opens the next ceremony.
+  const command = ceremony.dataset.kind === "prestige" ? "prestige" : "rank_up";
+  ceremony.hidden = true;
+  invoke<Progress>(command)
+    .then(renderProgress)
+    .catch((error) => console.error(`[mana] ${command} failed`, error));
+});
+
+ceremony.querySelector<HTMLElement>(".later")!.addEventListener("click", () => {
+  ceremony.hidden = true;
+});
+
 void listen<Snapshot>("usage-update", (e) => {
   snapshots.set(e.payload.provider, e.payload);
   renderProvider(e.payload.provider);
+});
+
+void listen<Progress>("progress-update", (e) => {
+  renderProgress(e.payload);
 });
 
 void listen<Activity>("activity", (e) => {
@@ -251,6 +375,8 @@ void invoke<Snapshot[]>("get_snapshots").then((all) => {
   for (const s of all) snapshots.set(s.provider, s);
   for (const provider of ["claude", "codex"]) renderProvider(provider);
 });
+
+void invoke<Progress>("get_progress").then(renderProgress);
 
 void invoke<Activity>("get_activity").then((a) => {
   activity.claude = a.claude ?? false;
