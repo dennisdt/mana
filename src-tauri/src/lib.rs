@@ -2,6 +2,7 @@ pub mod activity;
 pub mod creds;
 pub mod parsers;
 pub mod poll;
+pub mod progress;
 
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
