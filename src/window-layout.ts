@@ -1,31 +1,19 @@
-export const ROSTER_WIDTH = 440;
+export const ROSTER_WIDTH = 456;
 export const INITIAL_ROSTER_HEIGHT = 175;
-export const MIN_SCALE = 0.5;
-export const MAX_SCALE = 2.5;
+
+/// The HUD renders at a fixed zoom, slightly above 1, so it reads well at a
+/// distance. The window itself is deliberately not user-resizable.
+export const WIDGET_ZOOM = 1.2;
 
 type Point = { x: number; y: number };
 type Size = { width: number; height: number };
 type Rect = Point & Size;
-
-export function scaleForWidth(width: number): number {
-  return Math.max(MIN_SCALE, Math.min(width / ROSTER_WIDTH, MAX_SCALE));
-}
 
 export function scaledRosterSize(cardScrollHeight: number, scale: number): Size {
   return {
     width: Math.round(ROSTER_WIDTH * scale),
     height: Math.ceil(rosterHeight(cardScrollHeight) * scale),
   };
-}
-
-/// Slightly above 1: the HUD reads better at a distance, and a user who
-/// wants it smaller still has the full drag range.
-export const DEFAULT_SCALE = 1.2;
-
-export function restoreScale(raw: string | null): number {
-  const parsed = Number(raw);
-  if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_SCALE;
-  return Math.max(MIN_SCALE, Math.min(parsed, MAX_SCALE));
 }
 
 export function rosterOrigin(

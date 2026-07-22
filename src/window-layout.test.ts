@@ -2,32 +2,28 @@ import { describe, expect, it, vi } from "vitest";
 import tauriConfig from "../src-tauri/tauri.conf.json";
 import {
   INITIAL_ROSTER_HEIGHT,
-  MAX_SCALE,
-  MIN_SCALE,
   ROSTER_WIDTH,
+  WIDGET_ZOOM,
   createSerialQueue,
-  DEFAULT_SCALE,
-  restoreScale,
   rosterHeight,
   rosterOrigin,
-  scaleForWidth,
   scaledRosterSize,
 } from "./window-layout";
 
 describe("permanent roster geometry", () => {
   it("uses the wider expanded roster from startup", () => {
     expect({ width: ROSTER_WIDTH, height: INITIAL_ROSTER_HEIGHT }).toEqual({
-      width: 440,
+      width: 456,
       height: 175,
     });
     const mainWindow = tauriConfig.app.windows.find(
       ({ label }) => label === "main",
     );
-    // The config window opens at the default scale so first paint matches
-    // what the frontend immediately resizes to for a fresh install.
+    // The config window opens at the fixed zoom so first paint matches what
+    // the frontend immediately resizes to.
     expect(mainWindow).toMatchObject({
-      width: Math.round(ROSTER_WIDTH * DEFAULT_SCALE),
-      height: Math.ceil(INITIAL_ROSTER_HEIGHT * DEFAULT_SCALE),
+      width: Math.round(ROSTER_WIDTH * WIDGET_ZOOM),
+      height: Math.ceil(INITIAL_ROSTER_HEIGHT * WIDGET_ZOOM),
     });
   });
 
@@ -60,7 +56,7 @@ describe("permanent roster geometry", () => {
         { x: 0, y: 0, width: 2880, height: 1800 },
         2,
       ),
-    ).toEqual({ x: 2000, y: 1380 });
+    ).toEqual({ x: 1968, y: 1380 });
   });
 
   it("reclamps an old 420px right-edge position for the wider roster", () => {
@@ -71,7 +67,7 @@ describe("permanent roster geometry", () => {
         { x: 0, y: 0, width: 2880, height: 1800 },
         2,
       ),
-    ).toEqual({ x: 2000, y: 80 });
+    ).toEqual({ x: 1968, y: 80 });
   });
 });
 
@@ -79,42 +75,23 @@ it("rounds measured card height plus the root border", () => {
   expect(rosterHeight(207.2)).toBe(210);
 });
 
-describe("drag-resize scaling", () => {
-  it("declares a resizable window bounded by the scale limits", () => {
+describe("fixed widget zoom", () => {
+  it("declares a non-resizable window with no drag bounds", () => {
     const mainWindow = tauriConfig.app.windows.find(
       ({ label }) => label === "main",
     );
-    expect(mainWindow).toMatchObject({
-      resizable: true,
-      minWidth: ROSTER_WIDTH * MIN_SCALE,
-      maxWidth: ROSTER_WIDTH * MAX_SCALE,
-    });
+    expect(mainWindow).toMatchObject({ resizable: false });
+    expect(mainWindow).not.toHaveProperty("minWidth");
+    expect(mainWindow).not.toHaveProperty("maxWidth");
   });
 
-  it("derives scale from the dragged width against the base roster width", () => {
-    expect(scaleForWidth(ROSTER_WIDTH)).toBe(1);
-    expect(scaleForWidth(660)).toBe(1.5);
+  it("renders at a comfortable fixed 1.2 zoom", () => {
+    expect(WIDGET_ZOOM).toBe(1.2);
   });
 
-  it("clamps scale between the minimum and maximum", () => {
-    expect(scaleForWidth(100)).toBe(MIN_SCALE);
-    expect(scaleForWidth(4400)).toBe(MAX_SCALE);
-  });
-
-  it("scales the roster size to whole logical pixels", () => {
-    expect(scaledRosterSize(207.2, 1)).toEqual({ width: 440, height: 210 });
-    expect(scaledRosterSize(207.2, 1.5)).toEqual({ width: 660, height: 315 });
-    expect(scaledRosterSize(173, 0.5)).toEqual({ width: 220, height: 88 });
-  });
-
-  it("restores a persisted scale, clamped, defaulting to a comfortable 1.2", () => {
-    expect(restoreScale("1.5")).toBe(1.5);
-    expect(restoreScale("9")).toBe(MAX_SCALE);
-    expect(restoreScale("0.1")).toBe(MIN_SCALE);
-    expect(restoreScale(null)).toBe(DEFAULT_SCALE);
-    expect(restoreScale("garbage")).toBe(DEFAULT_SCALE);
-    expect(restoreScale("-2")).toBe(DEFAULT_SCALE);
-    expect(DEFAULT_SCALE).toBe(1.2);
+  it("scales the roster size to whole logical pixels at the fixed zoom", () => {
+    expect(scaledRosterSize(207.2, 1)).toEqual({ width: 456, height: 210 });
+    expect(scaledRosterSize(207.2, WIDGET_ZOOM)).toEqual({ width: 547, height: 252 });
   });
 });
 

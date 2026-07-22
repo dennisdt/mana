@@ -26,10 +26,9 @@ import {
 import { cardHtml, providerIsVisible, type Snapshot } from "./view";
 import {
   createSerialQueue,
-  restoreScale,
   rosterOrigin,
-  scaleForWidth,
   scaledRosterSize,
+  WIDGET_ZOOM,
 } from "./window-layout";
 
 type Activity = { claude: boolean; codex: boolean };
@@ -234,15 +233,7 @@ function renderProgress(p: Progress): void {
   resizeRosterContent();
 }
 
-const SCALE_STORAGE_KEY = "mana.scale";
-let scale = restoreScale(localStorage.getItem(SCALE_STORAGE_KEY));
-let appliedSize: { width: number; height: number } | undefined;
-
-function applyScale(): void {
-  document.documentElement.style.zoom = String(scale);
-}
-
-applyScale();
+document.documentElement.style.zoom = String(WIDGET_ZOOM);
 
 const enqueueSizing = createSerialQueue((error) => {
   console.error("[mana] window sizing failed", error);
@@ -254,7 +245,7 @@ function resizeRosterContent(): void {
     // the window height. #root itself always fills the viewport, so its
     // scrollHeight would just echo the current window size back.
     const content = document.getElementById("content")!;
-    const size = scaledRosterSize(content.scrollHeight, scale);
+    const size = scaledRosterSize(content.scrollHeight, WIDGET_ZOOM);
     const win = getCurrentWindow();
     const position = await win.outerPosition();
     const monitor = await currentMonitor();
@@ -271,7 +262,6 @@ function resizeRosterContent(): void {
           monitor.scaleFactor,
         )
       : position;
-    appliedSize = size;
     await win.setSize(new LogicalSize(size.width, size.height));
     await win.setPosition(new PhysicalPosition(target.x, target.y));
   });
@@ -295,23 +285,6 @@ void getCurrentWindow().onMoved(() => {
     moving = false;
     updateSprites();
   }, 300);
-});
-
-let resizeTimer: ReturnType<typeof setTimeout> | undefined;
-void getCurrentWindow().onResized(({ payload }) => {
-  if (!appliedSize) return;
-  const logical = payload.toLogical(window.devicePixelRatio);
-  const programmatic =
-    Math.abs(logical.width - appliedSize.width) <= 1 &&
-    Math.abs(logical.height - appliedSize.height) <= 1;
-  if (programmatic) return;
-  scale = scaleForWidth(logical.width);
-  applyScale();
-  clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(() => {
-    localStorage.setItem(SCALE_STORAGE_KEY, String(scale));
-    resizeRosterContent();
-  }, 250);
 });
 
 const actionButton = document.getElementById("action")!;
