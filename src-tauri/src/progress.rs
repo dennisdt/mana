@@ -180,6 +180,12 @@ pub struct ProgressState {
     pub rank: usize,
     pub prestige: u32,
     pub prestige_token_floor: u64,
+    /// False until the first full scan banks pre-existing token history as
+    /// the XP baseline. `serde(default)` deliberately re-baselines any state
+    /// file written before this field existed: progression earned against
+    /// lifetime history was unearned, so everybody starts back at zero.
+    #[serde(default)]
+    pub initialized: bool,
     pub tally: TallyState,
 }
 
@@ -243,6 +249,16 @@ pub fn try_rank_up(state: &mut ProgressState) -> Result<(), String> {
     }
     state.rank += 1;
     Ok(())
+}
+
+/// One-time reset after the first full scan: pre-existing token history is
+/// banked as the XP floor and any progression derived from it is revoked.
+/// Levels are meant to be earned from live usage, not imported.
+pub fn initialize_baseline(state: &mut ProgressState) {
+    state.rank = 0;
+    state.prestige = 0;
+    state.prestige_token_floor = state.tally.total_tokens;
+    state.initialized = true;
 }
 
 /// Prestige: back to naked, curve steepens, and the token floor moves to
@@ -353,6 +369,9 @@ pub fn spawn_progress_watcher(app: tauri::AppHandle) {
                 let state = &mut *store.0.lock().unwrap();
                 scan_claude_dir(&claude_dir, &mut state.tally);
                 scan_codex_dir(&codex_dir, &mut state.tally);
+                if !state.initialized {
+                    initialize_baseline(state);
+                }
                 let view = progress_view(state);
                 (last.as_ref() != Some(&view)).then(|| (state.clone(), view))
             };
@@ -466,6 +485,7 @@ mod tests {
             rank,
             prestige,
             prestige_token_floor: floor,
+            initialized: true,
             tally: TallyState {
                 total_tokens: tokens,
                 ..Default::default()
@@ -511,6 +531,30 @@ mod tests {
         let path = std::env::temp_dir().join(format!("mana-progress-{}.json", std::process::id()));
         save_progress(&path, &s).unwrap();
         assert_eq!(load_progress(&path), s); // load returns Default on missing/corrupt file
+    }
+
+    #[test]
+    fn first_scan_banks_history_and_zeroes_progression() {
+        let mut s = state_with(16_000_000_000, 13, 1, 0);
+        s.initialized = false;
+        initialize_baseline(&mut s);
+        assert!(s.initialized);
+        assert_eq!(
+            (s.rank, s.prestige, s.prestige_token_floor),
+            (0, 0, 16_000_000_000),
+        );
+        let v = progress_view(&s);
+        assert_eq!((v.xp, v.level, v.rank_up_eligible), (0, 1, false));
+    }
+
+    #[test]
+    fn legacy_state_files_rebaseline_on_load() {
+        // Progression earned against pre-update lifetime history was unearned;
+        // files written before `initialized` existed must come back false so
+        // the next scan resets them to zero.
+        let json = r#"{"rank":5,"prestige":1,"prestige_token_floor":7,"tally":{"total_tokens":42,"claude_offsets":{},"codex_offsets":{},"codex_totals":{}}}"#;
+        let s: ProgressState = serde_json::from_slice(json.as_bytes()).unwrap();
+        assert!(!s.initialized);
     }
 
     #[test]
