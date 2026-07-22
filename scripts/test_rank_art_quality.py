@@ -119,6 +119,60 @@ class RankArtQualityTests(unittest.TestCase):
                             edge_values.append(alpha.getpixel((x, y)))
                 self.assertEqual(max(edge_values), 0)
 
+    def test_normalizer_can_emit_four_times_retina_cells_with_scaled_margins(self) -> None:
+        source = Image.new("RGBA", (1200, 900), (0, 0, 0, 0))
+        for row in range(3):
+            for column in range(4):
+                left = column * 300 + 50
+                top = row * 300 + 45
+                for y in range(top, top + 210):
+                    for x in range(left, left + 200):
+                        source.putpixel((x, y), (34, 152, 255, 255))
+
+        normalized = normalize_atlas(source, cell_size=224, cell_margin=8)
+
+        self.assertEqual(normalized.size, (896, 672))
+        for row in range(3):
+            for column in range(4):
+                cell = normalized.crop(
+                    (column * 224, row * 224, (column + 1) * 224, (row + 1) * 224)
+                )
+                alpha = cell.getchannel("A")
+                edge_values = []
+                for y in range(224):
+                    for x in range(224):
+                        if x < 8 or x >= 216 or y < 8 or y >= 216:
+                            edge_values.append(alpha.getpixel((x, y)))
+                self.assertEqual(max(edge_values), 0)
+
+    def test_normalizer_accepts_overlapping_source_rows_for_tall_ornaments(self) -> None:
+        source = Image.new("RGBA", (400, 300), (0, 0, 0, 0))
+        for column in range(4):
+            left = column * 100 + 20
+            for y in range(18, 82):
+                for x in range(left, left + 60):
+                    source.putpixel((x, y), (255, 210, 64, 255))
+            for y in range(115, 178):
+                for x in range(left, left + 60):
+                    source.putpixel((x, y), (80, 170, 255, 255))
+            # The final row's staff tip begins above the equal 200px row
+            # boundary, while its body continues well below it.
+            for y in range(184, 278):
+                for x in range(left, left + 60):
+                    source.putpixel((x, y), (255, 145, 32, 255))
+
+        normalized = normalize_atlas(
+            source,
+            source_row_bounds=[(0, 95), (105, 190), (180, 290)],
+        )
+
+        third_row = normalized.crop((0, 224, 112, 336)).getchannel("A")
+        self.assertIsNotNone(third_row.getbbox())
+        self.assertGreater(
+            sum(value > 16 for value in third_row.get_flattened_data()),
+            3_000,
+        )
+
     def test_metrics_measure_every_animation_cell(self) -> None:
         metrics = atlas_metrics(atlas_with_palette(512))
 
@@ -126,6 +180,16 @@ class RankArtQualityTests(unittest.TestCase):
         self.assertGreater(metrics.median_unique_colors, 400)
         self.assertGreater(metrics.median_visible_pixels, 5_000)
         self.assertGreater(metrics.median_occupied_density, 0.95)
+
+    def test_metrics_compare_two_times_and_four_times_retina_atlases(self) -> None:
+        reference = atlas_with_palette(512)
+        retina_candidate = reference.resize((896, 672), Image.Resampling.NEAREST)
+
+        report = compare_atlases(reference, retina_candidate)
+
+        self.assertTrue(report.ok)
+        self.assertAlmostEqual(report.coverage_ratio, 1.0)
+        self.assertAlmostEqual(report.density_ratio, 1.0)
 
     def test_metrics_measure_dark_outline_coverage(self) -> None:
         outlined = atlas_metrics(atlas_with_outline(dark_outline=True))

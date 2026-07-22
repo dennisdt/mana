@@ -3,14 +3,16 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const styles = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
+const mainSource = readFileSync(new URL("./main.ts", import.meta.url), "utf8");
 const librs = readFileSync(new URL("../src-tauri/src/lib.rs", import.meta.url), "utf8");
 
 describe("fantasy gaming HUD stylesheet", () => {
-  it("uses only the original generated frame", () => {
-    expect(styles).toContain('url("/hud/mana-bar-frame.png")');
+  it("keeps the original generated frame as the root fallback", () => {
+    expect(styles).toMatch(
+      /:root\s*\{[^}]*--meter-frame-art:\s*url\("\/hud\/mana-bar-frame\.png"\)/s,
+    );
     expect(styles).not.toContain("boss-bar-");
     expect(styles).not.toContain("background-size: 4px 4px");
-    expect(styles).not.toMatch(/\.track::after\s*\{[^}]*mana-bar-frame/s);
   });
 
   it("renders free-standing illustrated mage atlases", () => {
@@ -18,22 +20,64 @@ describe("fantasy gaming HUD stylesheet", () => {
     expect(styles).toContain('url("/sprites/codex-ice-lightning.png")');
     expect(styles).not.toContain("clawd.png");
     expect(styles).not.toContain("nimbus.png");
-    expect(styles).not.toContain(".familiar-slot::before");
+    expect(styles).toContain(".familiar-slot::before");
     expect(styles).not.toContain(".familiar-slot::after");
-    expect(styles).toMatch(/#card section\s*\{[^}]*grid-template-columns:\s*60px minmax\(0, 1fr\)/s);
+    expect(styles).toMatch(/#card section\s*\{[^}]*grid-template-columns:\s*70px minmax\(0, 1fr\)/s);
     const spriteRule = styles.match(/\.sprite\s*\{([^}]*)\}/s)?.[1] ?? "";
+    const spriteArtRule = styles.match(/\.sprite::before\s*\{([^}]*)\}/s)?.[1] ?? "";
     expect(spriteRule).toMatch(/width:\s*56px/);
     expect(spriteRule).toMatch(/height:\s*56px/);
-    expect(spriteRule).toMatch(/background-size:\s*224px 168px/);
-    expect(spriteRule).toMatch(/image-rendering:\s*pixelated/);
+    expect(spriteArtRule).toMatch(/background-size:\s*272px 204px/);
+    expect(spriteArtRule).toMatch(/image-rendering:\s*auto/);
+    expect(spriteArtRule).not.toMatch(/drop-shadow\(0 0/);
     expect(spriteRule).not.toContain("animation:");
-    expect(styles).toMatch(/\.sprite\[data-frame="0"\]\s*\{[^}]*background-position-x:\s*0/s);
-    expect(styles).toMatch(/\.sprite\[data-frame="1"\]\s*\{[^}]*background-position-x:\s*-56px/s);
-    expect(styles).toMatch(/\.sprite\[data-frame="2"\]\s*\{[^}]*background-position-x:\s*-112px/s);
-    expect(styles).toMatch(/\.sprite\[data-frame="3"\]\s*\{[^}]*background-position-x:\s*-168px/s);
-    expect(styles).toMatch(/\.sprite\[data-state="working"\]\s*\{[^}]*background-position-y:\s*-56px/s);
-    expect(styles).toMatch(/\.sprite\[data-state="hover"\]\s*\{[^}]*background-position-y:\s*-112px/s);
+    expect(styles).toMatch(/\.sprite\[data-frame="0"\]::before\s*\{[^}]*background-position-x:\s*0/s);
+    expect(styles).toMatch(/\.sprite\[data-frame="1"\]::before\s*\{[^}]*background-position-x:\s*-68px/s);
+    expect(styles).toMatch(/\.sprite\[data-frame="2"\]::before\s*\{[^}]*background-position-x:\s*-136px/s);
+    expect(styles).toMatch(/\.sprite\[data-frame="3"\]::before\s*\{[^}]*background-position-x:\s*-204px/s);
+    expect(styles).toMatch(/\.sprite\[data-state="working"\]::before\s*\{[^}]*background-position-y:\s*-68px/s);
+    expect(styles).toMatch(/\.sprite\[data-state="hover"\]::before\s*\{[^}]*background-position-y:\s*-136px/s);
     expect(styles).not.toContain("sprite-run");
+  });
+
+  it("counter-scales two-times sprite art against the fixed widget zoom", () => {
+    expect(mainSource).toMatch(
+      /document\.documentElement\.style\.setProperty\(\s*"--sprite-resolution-scale",\s*String\(1 \/ WIDGET_ZOOM\),?\s*\)/s,
+    );
+    const spriteRule = styles.match(/\.sprite\s*\{([^}]*)\}/s)?.[1] ?? "";
+    expect(spriteRule).toMatch(/zoom:\s*var\(--sprite-resolution-scale,\s*1\)/);
+    expect(spriteRule).not.toMatch(/\bfilter\s*:/);
+  });
+
+  it("renders each atlas frame on an oversized layer that can overflow its anchor", () => {
+    const spriteRule = styles.match(/\.sprite\s*\{([^}]*)\}/s)?.[1] ?? "";
+    const artRule = styles.match(/\.sprite::before\s*\{([^}]*)\}/s)?.[1] ?? "";
+
+    expect(spriteRule).toMatch(/width:\s*56px/);
+    expect(spriteRule).toMatch(/height:\s*56px/);
+    expect(spriteRule).toMatch(/overflow:\s*visible/);
+    expect(spriteRule).not.toMatch(/background-(?:image|size|position|repeat)/);
+    expect(artRule).toMatch(/position:\s*absolute/);
+    expect(artRule).toMatch(/width:\s*68px/);
+    expect(artRule).toMatch(/height:\s*68px/);
+    expect(artRule).toMatch(/top:\s*50%/);
+    expect(artRule).toMatch(/left:\s*50%/);
+    expect(artRule).toMatch(/transform:\s*translate\(-50%,\s*-50%\)/);
+    expect(artRule).toMatch(/background-image:\s*var\(--sprite-sheet\)/);
+    expect(artRule).toMatch(/background-size:\s*272px 204px/);
+    expect(styles).toMatch(
+      /\.sprite\[data-frame="1"\]::before\s*\{[^}]*background-position-x:\s*-68px/s,
+    );
+    expect(styles).toMatch(
+      /\.sprite\[data-state="hover"\]::before\s*\{[^}]*background-position-y:\s*-136px/s,
+    );
+    expect(styles).toMatch(
+      /\.sprite\.codex-mage\s*\{[^}]*--sprite-sheet:\s*url\("\/sprites\/codex-ice-lightning\.png"\)/s,
+    );
+    expect(mainSource).toContain(
+      'element.style.setProperty("--sprite-sheet", `url("${url}")`)',
+    );
+    expect(mainSource).not.toContain("element.style.backgroundImage");
   });
 
   it("declares fixed frame and live-core geometry", () => {
@@ -60,11 +104,12 @@ describe("fantasy gaming HUD stylesheet", () => {
     expect(reducedMotion).toContain(".sprite[data-frame]");
     expect(reducedMotion).toContain("background-position-x: 0");
     expect(reducedMotion).toContain(".fill::before");
-    expect(reducedMotion).toContain(".provider-card[data-working] .activity-signal");
+    expect(reducedMotion).toContain("#progress .xpfill::before");
+    expect(reducedMotion).toContain("#progress .xpfill::after");
     expect(reducedMotion).toContain("animation: none");
   });
 
-  it("staggers provider pulses and row glints with deterministic offsets", () => {
+  it("staggers row glints with deterministic provider and row offsets", () => {
     expect(styles).toMatch(/#card-claude\s*\{[^}]*--provider-motion-offset:\s*0s/s);
     expect(styles).toMatch(/#card-codex\s*\{[^}]*--provider-motion-offset:\s*-0\.8s/s);
     expect(styles).toMatch(/\.row:nth-child\(1\)\s*\{[^}]*--row-motion-offset:\s*0s/s);
@@ -73,9 +118,6 @@ describe("fantasy gaming HUD stylesheet", () => {
     expect(styles).toMatch(/\.row:nth-child\(4\)\s*\{[^}]*--row-motion-offset:\s*-2\.55s/s);
     expect(styles).toMatch(
       /\.fill::before\s*\{[^}]*animation-delay:\s*calc\(var\(--provider-motion-offset\) \+ var\(--row-motion-offset\)\)/s,
-    );
-    expect(styles).toMatch(
-      /\.provider-card\[data-working\] \.activity-signal\s*\{[^}]*animation-delay:\s*var\(--provider-motion-offset\)/s,
     );
   });
 
@@ -132,7 +174,8 @@ describe("concentric nested corner radii", () => {
       "--fill-radius: max(1px, calc(var(--meter-frame-radius) - var(--meter-inset-y)))",
     );
     expect(styles).toMatch(/\.fill\s*\{[^}]*border-radius:\s*var\(--fill-radius\)/s);
-    expect(styles).not.toMatch(/border-radius:\s*\d/);
+    const fill = styles.match(/\.fill\s*\{([^}]*)\}/s)?.[1] ?? "";
+    expect(fill).not.toMatch(/border-radius:\s*\d/);
   });
 });
 
@@ -164,7 +207,7 @@ describe("rank border themes", () => {
     }
   });
 
-  it("consumes the frame variables from one shared border rule", () => {
+  it("consumes the frame variables from the original shared border rule", () => {
     expect(styles).toMatch(
       /#root\s*\{[^}]*border:\s*1px solid var\(--frame-1, rgba\(205, 221, 242, 0\.34\)\)/s,
     );
@@ -181,15 +224,9 @@ describe("rank border themes", () => {
     expect(styles).toMatch(/#root\[data-rank="naked"\]::before[^{]*\{[^}]*content:\s*none/s);
   });
 
-  it("rings every dressed tier with a radius-following gradient, not border-image", () => {
-    // border-image ignores border-radius, which would poke square gradient
-    // corners into the rounded HUD frame — the exact defect the concentric
-    // corner work removed. The #frame overlay masks each tier's --ring
-    // gradient to a band that inherits the radius instead.
+  it("rings every dressed tier with the original radius-following gradient", () => {
     expect(styles).not.toMatch(/border-image\s*:/);
-    expect(styles).toMatch(
-      /#frame\s*\{[^}]*border-radius:\s*var\(--hud-radius\)/s,
-    );
+    expect(styles).toMatch(/#frame\s*\{[^}]*border-radius:\s*var\(--hud-radius\)/s);
     expect(styles).toMatch(/#frame\s*\{[^}]*-webkit-mask-composite:\s*xor/s);
     expect(styles).toMatch(/#frame\s*\{[^}]*pointer-events:\s*none/s);
     expect(styles).toMatch(/#frame\s*\{[^}]*background:\s*var\(--ring, none\)/s);
@@ -203,7 +240,7 @@ describe("rank border themes", () => {
     }
   });
 
-  it("escalates frame weight with rank", () => {
+  it("escalates the original frame weight with rank", () => {
     const weights: Array<[string, string]> = [
       ["plastic", "1px"], ["wood", "1px"],
       ["iron", "2px"], ["bronze", "2px"], ["silver", "2px"], ["gold", "2px"],
@@ -217,7 +254,7 @@ describe("rank border themes", () => {
     }
   });
 
-  it("tints the corner ticks from the frame on the top tiers", () => {
+  it("tints the original corner ticks from the frame on the top tiers", () => {
     expect(styles).toMatch(
       /#root::before[^{]*\{[^}]*var\(--tick-1, rgba\(219, 231, 244, 0\.58\)\)/s,
     );
@@ -231,19 +268,12 @@ describe("rank border themes", () => {
     }
   });
 
-  it("breathes the godlike halo and stills it under reduced motion", () => {
+  it("restores Champion and Godlike motion with reduced-motion coverage", () => {
     expect(styles).toContain("@keyframes godlike-halo");
+    expect(styles).toContain("@keyframes champion-radiance");
     expect(styles).toMatch(
       /#root\[data-rank="godlike"\]\s*\{[^}]*animation:\s*godlike-halo/s,
     );
-    const reducedMotion = styles.slice(
-      styles.indexOf("@media (prefers-reduced-motion: reduce)"),
-    );
-    expect(reducedMotion).toContain('#root[data-rank="godlike"]');
-  });
-
-  it("animates champion radiance and stills it under reduced motion", () => {
-    expect(styles).toContain("@keyframes champion-radiance");
     expect(styles).toMatch(
       /#root\[data-rank="champion"\] #frame\s*\{[^}]*animation:\s*champion-radiance 6s linear infinite/s,
     );
@@ -251,16 +281,17 @@ describe("rank border themes", () => {
       styles.indexOf("@media (prefers-reduced-motion: reduce)"),
     );
     expect(reducedMotion).toContain('#root[data-rank="champion"]');
+    expect(reducedMotion).toContain('#root[data-rank="godlike"]');
   });
 
-  it("adds the godlike second outer glow", () => {
+  it("restores the original Godlike second outer glow", () => {
     expect(styles).toMatch(
       /#root\[data-rank="godlike"\][^{]*\{[^}]*--frame-glow-2:\s*rgba\(190, 225, 255, 0\.4\)/s,
     );
   });
 });
 
-describe("prestige badge fallbacks", () => {
+describe("prestige badges", () => {
   it("sizes badges and maps each slot to its art", () => {
     const badge = styles.match(/\.badge\s*\{([^}]*)\}/s)?.[1] ?? "";
     expect(badge).toMatch(/width:\s*24px/);
@@ -270,19 +301,95 @@ describe("prestige badge fallbacks", () => {
     }
   });
 
-  it("shows a tinted star only when the badge art is absent", () => {
-    expect(styles).toMatch(/\.badge\[data-fallback="true"\]::after\s*\{[^}]*content:\s*"★"/s);
-    expect(styles).toMatch(/\.badge\[data-n="1"\][^{]*\{[^}]*--badge-tint:\s*#dbe7f4/s);
-    expect(styles).toMatch(/\.badge\[data-n="4"\][^{]*\{[^}]*--badge-tint:\s*#f2c968/s);
-    expect(styles).toMatch(/\.badge\[data-n="7"\][^{]*\{[^}]*--badge-tint:\s*#9be8ff/s);
-    expect(styles).toMatch(
-      /\.badge\[data-n="10"\]\[data-fallback="true"\]::after\s*\{[^}]*background-clip:\s*text/s,
-    );
-  });
-
   it("renders the overflow count as a superscript on the tenth badge", () => {
     expect(styles).toMatch(
       /\.badge\[data-count\]::before\s*\{[^}]*content:\s*attr\(data-count\)/s,
+    );
+  });
+
+  it("uses an empty-content circular crest when badge art is missing", () => {
+    expect(styles).toMatch(
+      /\.badge\[data-fallback="true"\]::after\s*\{[^}]*content:\s*""[^}]*border-radius:\s*50%[^}]*radial-gradient/s,
+    );
+    expect(styles).not.toContain("★");
+  });
+});
+
+describe("rank armor art integration", () => {
+  const tiers = [
+    "naked", "plastic", "wood", "iron", "bronze", "silver", "gold",
+    "platinum", "emerald", "diamond", "master", "legend", "champion", "godlike",
+  ];
+
+  it("maps every known rank to exactly one matching meter foreground", () => {
+    for (const tier of tiers) {
+      expect(styles, tier).toMatch(
+        new RegExp(
+          `#root\\[data-rank="${tier}"\\][^{]*\\{[^}]*--meter-frame-art:\\s*url\\("/hud/mana-bar-frame-${tier}\\.png"\\)`,
+          "s",
+        ),
+      );
+    }
+  });
+
+  it("renders only the selected frame in a foreground above the live fill", () => {
+    const track = styles.match(/\.track\s*\{([^}]*)\}/s)?.[1] ?? "";
+    const foreground = styles.match(/\.track::after\s*\{([^}]*)\}/s)?.[1] ?? "";
+    expect(track).toMatch(/background:\s*none/);
+    expect(track).not.toContain("url(");
+    expect(foreground).toMatch(/position:\s*absolute/);
+    expect(foreground).toMatch(/inset:\s*0/);
+    expect(foreground).toMatch(/z-index:\s*2/);
+    expect(foreground).toMatch(/background-image:\s*var\(--meter-frame-art\)/);
+    expect(foreground).not.toContain('mana-bar-frame.png');
+  });
+
+  it("keeps the action clickable in its angular top-right corner", () => {
+    expect(styles).toMatch(
+      /#action\s*\{[^}]*top:\s*4px[^}]*right:\s*4px[^}]*clip-path:[^}]*-webkit-app-region:\s*no-drag/s,
+    );
+  });
+
+  it("uses original frame tokens for the action without armor-shell tokens", () => {
+    const action = styles.match(/#action\s*\{([^}]*)\}/s)?.[1] ?? "";
+    expect(action).toMatch(/var\(--frame-1/);
+    expect(action).toMatch(/var\(--frame-2/);
+    expect(action).not.toContain("--armor-");
+    expect(styles).not.toContain("--armor-");
+  });
+
+  it("moves working feedback from diamonds to a radial glow behind the familiar", () => {
+    expect(styles).not.toContain("activity-signal");
+    expect(styles).toMatch(
+      /\.familiar-slot::before\s*\{[^}]*z-index:\s*1[^}]*top:\s*50%[^}]*left:\s*50%[^}]*width:\s*72px[^}]*height:\s*72px[^}]*radial-gradient\(\s*circle[^}]*var\(--glow\)[^}]*pointer-events:\s*none/s,
+    );
+    const glow = styles.match(/\.familiar-slot::before\s*\{([^}]*)\}/s)?.[1] ?? "";
+    expect(glow).not.toMatch(/\bfilter\s*:/);
+    expect(styles).toMatch(
+      /\.provider-card\[data-working\] \.familiar-slot::before\s*\{[^}]*opacity:[^}]*transform:\s*translate\(-50%, -50%\) scale/s,
+    );
+    expect(styles).not.toMatch(/\.provider-card\[data-working\] \.sprite\s*\{/);
+    expect(styles).not.toMatch(/\.sprite\.(?:claude|codex)-mage\s*\{[^}]*drop-shadow\(0 0/s);
+  });
+
+  it("keeps provider art and ornament overflow visible", () => {
+    expect(styles).toMatch(/#card section\s*\{[^}]*overflow:\s*visible/s);
+    expect(styles).toMatch(
+      /\.familiar-slot\s*\{[^}]*width:\s*70px[^}]*min-height:\s*64px[^}]*overflow:\s*visible/s,
+    );
+    expect(styles).toMatch(/\.sprite\s*\{[^}]*overflow:\s*visible/s);
+  });
+
+  it("adds animated XP sheen and circular gem glints with reduced-motion coverage", () => {
+    expect(styles).toMatch(/#progress \.xpfill::before\s*\{[^}]*animation:/s);
+    expect(styles).toMatch(
+      /#progress \.xpfill::after\s*\{[^}]*radial-gradient\(circle[^}]*animation:/s,
+    );
+    const reducedMotion = styles.slice(
+      styles.indexOf("@media (prefers-reduced-motion: reduce)"),
+    );
+    expect(reducedMotion).toMatch(
+      /#progress \.xpfill::before,\s*#progress \.xpfill::after[^{]*\{[^}]*animation:\s*none/s,
     );
   });
 });

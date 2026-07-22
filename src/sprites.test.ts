@@ -78,8 +78,12 @@ function decodeRgba(url: URL): DecodedPng {
 
 function verifyAtlas(relativePath: string): void {
   const image = decodeRgba(new URL(relativePath, import.meta.url));
-  expect([image.width, image.height]).toEqual([448, 336]);
-  const cell = 112;
+  expect(image.width % 448).toBe(0);
+  const retinaScale = image.width / 448;
+  expect([1, 2]).toContain(retinaScale);
+  expect(image.height).toBe(336 * retinaScale);
+  const cell = 112 * retinaScale;
+  const margin = 4 * retinaScale;
   const alphaAt = (x: number, y: number) => image.pixels[(y * image.width + x) * 4 + 3];
 
   for (let row = 0; row < 3; row += 1) {
@@ -91,7 +95,7 @@ function verifyAtlas(relativePath: string): void {
       for (let y = 0; y < cell; y += 1) {
         for (let x = 0; x < cell; x += 1) {
           const alpha = alphaAt(column * cell + x, row * cell + y);
-          if (x < 4 || x >= cell - 4 || y < 4 || y >= cell - 4) {
+          if (x < margin || x >= cell - margin || y < margin || y >= cell - margin) {
             edgeAlpha = Math.max(edgeAlpha, alpha);
           }
           if (alpha > 16) {
@@ -101,12 +105,14 @@ function verifyAtlas(relativePath: string): void {
         }
       }
       expect(edgeAlpha).toBe(0);
-      expect(visible).toBeGreaterThan(600);
-      expect(visible).toBeLessThan(10_500);
-      expect(bottom).toBeGreaterThan(60);
+      expect(visible).toBeGreaterThan(600 * retinaScale * retinaScale);
+      expect(visible).toBeLessThan(10_500 * retinaScale * retinaScale);
+      expect(bottom).toBeGreaterThan(60 * retinaScale);
       bottoms.push(bottom);
     }
-    expect(Math.max(...bottoms) - Math.min(...bottoms)).toBeLessThanOrEqual(12);
+    expect(Math.max(...bottoms) - Math.min(...bottoms)).toBeLessThanOrEqual(
+      12 * retinaScale,
+    );
   }
 }
 
@@ -126,6 +132,13 @@ describe("elemental mage sprite atlases", () => {
     for (const name of names.filter((file) => file.includes("-rank-"))) {
       verifyAtlas(`../public/sprites/${name}`);
     }
+  });
+
+  it("keeps the Codex Champion upgrade at true four-times Retina resolution", () => {
+    const champion = decodeRgba(
+      new URL("../public/sprites/codex-rank-champion.png", import.meta.url),
+    );
+    expect([champion.width, champion.height]).toEqual([896, 672]);
   });
 });
 

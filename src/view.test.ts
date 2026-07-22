@@ -41,6 +41,10 @@ describe("cardHtml", () => {
     expect(html).toContain("log in via the claude CLI");
   });
 
+  it("omits the superseded activity indicator", () => {
+    expect(cardHtml(weeklyOnly, "claude")).not.toContain("activity-signal");
+  });
+
   it("escapes limit labels", () => {
     const snapshot = { ...weeklyOnly, bars: [{ ...weeklyOnly.bars[0], label: '<script>' }] };
     expect(cardHtml(snapshot, "codex")).toContain("&#60;script&#62;");

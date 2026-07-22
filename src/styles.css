@@ -13,6 +13,7 @@
   --low-1: #ff6c7f;
   --low-2: #ff365d;
   --low-glow: rgba(255, 54, 93, 0.58);
+  --meter-frame-art: url("/hud/mana-bar-frame.png");
   /* Concentric corners: inner radius = outer radius - inset, clamped at a
      small minimum. --hud-radius must stay equal to HUD_CORNER_RADIUS in
      src-tauri/src/lib.rs (the vibrancy blur layer), or the blur corner and
@@ -119,8 +120,9 @@ body {
 
 #card section {
   display: grid;
-  grid-template-columns: 60px minmax(0, 1fr);
+  grid-template-columns: 70px minmax(0, 1fr);
   min-width: 0;
+  overflow: visible;
   gap: 10px;
   padding: 6px 0 14px;
 }
@@ -178,31 +180,66 @@ body {
 }
 
 #progress .xpfill {
+  position: relative;
   width: 0;
   height: 100%;
+  overflow: hidden;
   border-radius: inherit;
   background: linear-gradient(90deg, var(--c1), var(--c2));
   box-shadow: 0 0 6px var(--glow);
   transition: width 0.45s cubic-bezier(0.22, 0.8, 0.28, 1);
 }
 
+#progress .xpfill::before,
+#progress .xpfill::after {
+  position: absolute;
+  inset: 0;
+  content: "";
+  pointer-events: none;
+}
+
+#progress .xpfill::before {
+  width: 28%;
+  background: linear-gradient(105deg, transparent, rgba(255, 255, 255, 0.78), transparent);
+  transform: translateX(-160%);
+  animation: xp-sheen 3.6s ease-in-out infinite;
+}
+
+#progress .xpfill::after {
+  background:
+    radial-gradient(circle at 31% 50%, rgba(255, 255, 255, 0.94) 0 0.7px, rgba(255, 241, 174, 0.66) 0.8px, transparent 1.5px),
+    radial-gradient(circle at 72% 50%, rgba(255, 255, 255, 0.9) 0 0.65px, rgba(174, 232, 255, 0.62) 0.75px, transparent 1.4px);
+  opacity: 0.28;
+  animation: xp-gem-glints 2.8s ease-in-out infinite;
+}
+
 #action {
   position: absolute;
   z-index: 5;
-  top: 8px;
-  right: 10px;
-  padding: 4px 10px;
-  border: 1px solid var(--gold);
-  border-radius: var(--pill-radius);
-  background: linear-gradient(180deg, rgba(64, 54, 26, 0.92), rgba(30, 24, 9, 0.92));
-  box-shadow: 0 0 10px rgba(242, 201, 104, 0.45);
-  color: var(--gold);
+  top: 4px;
+  right: 4px;
+  padding: 4px 9px;
+  border: 1px solid var(--frame-1, var(--gold));
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--frame-1, var(--gold)) 38%, #151824),
+      color-mix(in srgb, var(--frame-2, #1e1809) 55%, #0d0f18)
+    );
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--frame-1, var(--gold)) 52%, transparent),
+    0 0 10px var(--frame-glow, rgba(242, 201, 104, 0.32));
+  clip-path: polygon(0 0, calc(100% - 7px) 0, 100% 7px, 100% 100%, 7px 100%, 0 calc(100% - 7px));
+  color: color-mix(in srgb, var(--frame-1, var(--gold)) 78%, white);
   font-family: inherit;
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   cursor: pointer;
+  pointer-events: auto;
+  touch-action: manipulation;
+  -webkit-app-region: no-drag;
   animation: status-pulse 1.6s ease-in-out infinite;
 }
 
@@ -316,16 +353,41 @@ body {
 
 .familiar-slot {
   position: relative;
+  z-index: 2;
   display: flex;
-  width: 60px;
-  min-height: 56px;
+  width: 70px;
+  min-height: 64px;
+  overflow: visible;
   align-items: center;
   justify-content: center;
 }
 
-.provider-card[data-working] .activity-signal {
-  animation: status-pulse 1.6s ease-in-out infinite;
-  animation-delay: var(--provider-motion-offset);
+.familiar-slot::before {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  left: 50%;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at center,
+    var(--glow) 0,
+    color-mix(in srgb, var(--glow) 42%, transparent) 38%,
+    transparent 72%
+  );
+  content: "";
+  opacity: 0.34;
+  pointer-events: none;
+  transform: translate(-50%, -50%) scale(0.94);
+  transition:
+    opacity 0.24s ease,
+    transform 0.24s ease;
+}
+
+.provider-card[data-working] .familiar-slot::before {
+  opacity: 0.66;
+  transform: translate(-50%, -50%) scale(1.08);
 }
 
 .provider-content,
@@ -335,13 +397,15 @@ body {
 }
 
 .provider-content {
+  position: relative;
+  z-index: 1;
   display: grid;
   gap: 8px;
 }
 
 .head {
   display: grid;
-  grid-template-columns: max-content minmax(0, 1fr) 7px max-content;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
   min-width: 0;
   align-items: center;
   gap: 7px;
@@ -384,19 +448,6 @@ body {
   min-width: 0;
   overflow: hidden;
   text-overflow: clip;
-}
-
-.activity-signal {
-  width: 7px;
-  height: 7px;
-  background: rgba(169, 175, 193, 0.22);
-  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
-  box-shadow: inset 0 0 0 1px rgba(219, 231, 244, 0.16);
-}
-
-.provider-card[data-working] .activity-signal {
-  background: linear-gradient(135deg, var(--silver), var(--c1) 55%, var(--c2));
-  box-shadow: 0 0 8px var(--glow);
 }
 
 .rows {
@@ -451,7 +502,19 @@ body {
   min-width: var(--meter-width);
   height: var(--meter-height);
   overflow: visible;
-  background: url("/hud/mana-bar-frame.png") center / 100% 100% no-repeat;
+  background: none;
+}
+
+.track::after {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  background-image: var(--meter-frame-art);
+  background-position: center;
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+  content: "";
+  pointer-events: none;
 }
 
 .fill {
@@ -505,65 +568,68 @@ body {
 
 .sprite {
   position: relative;
-  z-index: 1;
+  z-index: 2;
   flex: none;
   width: 56px;
   height: 56px;
-  background-repeat: no-repeat;
-  background-size: 224px 168px;
-  image-rendering: pixelated;
+  overflow: visible;
+  zoom: var(--sprite-resolution-scale, 1);
 }
 
-.sprite[data-frame="0"] {
+.sprite::before {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 68px;
+  height: 68px;
+  background-repeat: no-repeat;
+  background-image: var(--sprite-sheet);
+  background-size: 272px 204px;
+  content: "";
+  image-rendering: auto;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+}
+
+.sprite[data-frame="0"]::before {
   background-position-x: 0;
 }
 
-.sprite[data-frame="1"] {
-  background-position-x: -56px;
+.sprite[data-frame="1"]::before {
+  background-position-x: -68px;
 }
 
-.sprite[data-frame="2"] {
-  background-position-x: -112px;
+.sprite[data-frame="2"]::before {
+  background-position-x: -136px;
 }
 
-.sprite[data-frame="3"] {
-  background-position-x: -168px;
+.sprite[data-frame="3"]::before {
+  background-position-x: -204px;
 }
 
 .sprite.claude-mage {
-  background-image: url("/sprites/claude-fire-poison.png");
-  filter:
-    drop-shadow(0 2px 1px rgba(0, 0, 0, 0.42))
-    drop-shadow(0 0 5px rgba(255, 106, 67, 0.24));
+  --sprite-sheet: url("/sprites/claude-fire-poison.png");
 }
 
 .sprite.codex-mage {
-  background-image: url("/sprites/codex-ice-lightning.png");
-  filter:
-    drop-shadow(0 2px 1px rgba(0, 0, 0, 0.42))
-    drop-shadow(0 0 5px rgba(88, 204, 255, 0.26));
+  --sprite-sheet: url("/sprites/codex-ice-lightning.png");
 }
 
-.sprite[data-state="idle"] {
+.sprite[data-state="idle"]::before {
   background-position-y: 0;
 }
 
-.sprite[data-state="working"] {
-  background-position-y: -56px;
+.sprite[data-state="working"]::before {
+  background-position-y: -68px;
 }
 
-.sprite[data-state="hover"] {
-  background-position-y: -112px;
+.sprite[data-state="hover"]::before {
+  background-position-y: -136px;
 }
 
 .stale .fill:not([data-empty="true"]) {
   opacity: 0.48;
   filter: saturate(0.42);
-}
-
-.stale .activity-signal {
-  opacity: 0.58;
-  filter: saturate(0.35);
 }
 
 .empty {
@@ -572,12 +638,13 @@ body {
   line-height: 1.4;
 }
 
-/* Rank border themes: each tier only declares its frame palette; the #root
-   rule above consumes the variables, so the border, glow, and ceremony tint
-   all move together. Ceremony overlays celebrate the tier being ENTERED, so
-   the #ceremony[data-tier] selectors override the values #root would let
-   them inherit. Naked (or not-yet-reported) rank means no border and no
-   corner ticks — the starting, undressed state. */
+/* Rank border themes retain the original app shell. Each known rank also
+   selects exactly one meter foreground; all other frame tokens stay on the
+   pre-iteration ring, corner-tick, action, and ceremony path. */
+#root[data-rank="naked"] {
+  --meter-frame-art: url("/hud/mana-bar-frame-naked.png");
+}
+
 #root:not([data-rank]),
 #root[data-rank="naked"] {
   border-color: transparent;
@@ -590,6 +657,7 @@ body {
 
 #root[data-rank="plastic"],
 #ceremony[data-tier="plastic"] {
+  --meter-frame-art: url("/hud/mana-bar-frame-plastic.png");
   --frame-1: #b8bec8;
   --frame-2: #8b929e;
   --ring: linear-gradient(160deg, var(--frame-1), var(--frame-2));
@@ -599,6 +667,7 @@ body {
 
 #root[data-rank="wood"],
 #ceremony[data-tier="wood"] {
+  --meter-frame-art: url("/hud/mana-bar-frame-wood.png");
   --frame-1: #a5713d;
   --frame-2: #6b4726;
   --ring: linear-gradient(160deg, var(--frame-1), var(--frame-2));
@@ -608,6 +677,7 @@ body {
 
 #root[data-rank="iron"],
 #ceremony[data-tier="iron"] {
+  --meter-frame-art: url("/hud/mana-bar-frame-iron.png");
   --frame-1: #9aa3ad;
   --frame-2: #5f6770;
   --ring: linear-gradient(160deg, var(--frame-1), var(--frame-2));
@@ -617,6 +687,7 @@ body {
 
 #root[data-rank="bronze"],
 #ceremony[data-tier="bronze"] {
+  --meter-frame-art: url("/hud/mana-bar-frame-bronze.png");
   --frame-1: #cd7f32;
   --frame-2: #8c5a24;
   --ring: linear-gradient(160deg, var(--frame-1), var(--frame-2));
@@ -626,6 +697,7 @@ body {
 
 #root[data-rank="silver"],
 #ceremony[data-tier="silver"] {
+  --meter-frame-art: url("/hud/mana-bar-frame-silver.png");
   --frame-1: #e6edf5;
   --frame-2: #97a3b4;
   --ring: linear-gradient(160deg, var(--frame-1), var(--frame-2));
@@ -635,6 +707,7 @@ body {
 
 #root[data-rank="gold"],
 #ceremony[data-tier="gold"] {
+  --meter-frame-art: url("/hud/mana-bar-frame-gold.png");
   --frame-1: #f2c968;
   --frame-2: #b8862e;
   --ring: linear-gradient(160deg, var(--frame-1), var(--frame-2));
@@ -644,6 +717,7 @@ body {
 
 #root[data-rank="platinum"],
 #ceremony[data-tier="platinum"] {
+  --meter-frame-art: url("/hud/mana-bar-frame-platinum.png");
   --frame-1: #dfe9ec;
   --frame-2: #9fb6c4;
   --ring: linear-gradient(160deg, var(--frame-1), var(--frame-2));
@@ -653,6 +727,7 @@ body {
 
 #root[data-rank="emerald"],
 #ceremony[data-tier="emerald"] {
+  --meter-frame-art: url("/hud/mana-bar-frame-emerald.png");
   --frame-1: #3ddc84;
   --frame-2: #147a4a;
   --ring: linear-gradient(160deg, var(--frame-1), var(--frame-2));
@@ -662,6 +737,7 @@ body {
 
 #root[data-rank="diamond"],
 #ceremony[data-tier="diamond"] {
+  --meter-frame-art: url("/hud/mana-bar-frame-diamond.png");
   --frame-1: #9be8ff;
   --frame-2: #4aa8d8;
   --ring: linear-gradient(160deg, var(--frame-1), var(--frame-2));
@@ -671,6 +747,7 @@ body {
 
 #root[data-rank="master"],
 #ceremony[data-tier="master"] {
+  --meter-frame-art: url("/hud/mana-bar-frame-master.png");
   --frame-1: #ff5a6e;
   --frame-2: #a3172c;
   --ring: linear-gradient(160deg, var(--frame-1), var(--frame-2));
@@ -682,6 +759,7 @@ body {
 
 #root[data-rank="legend"],
 #ceremony[data-tier="legend"] {
+  --meter-frame-art: url("/hud/mana-bar-frame-legend.png");
   --frame-1: #b06aff;
   --frame-2: #5e1ea8;
   --ring: linear-gradient(160deg, var(--frame-1), var(--frame-2));
@@ -693,6 +771,7 @@ body {
 
 #root[data-rank="champion"],
 #ceremony[data-tier="champion"] {
+  --meter-frame-art: url("/hud/mana-bar-frame-champion.png");
   --frame-1: #ffd75e;
   --frame-2: #3f8cff;
   --ring: linear-gradient(var(--radiance-angle), var(--frame-1), var(--frame-2));
@@ -704,6 +783,7 @@ body {
 
 #root[data-rank="godlike"],
 #ceremony[data-tier="godlike"] {
+  --meter-frame-art: url("/hud/mana-bar-frame-godlike.png");
   --frame-1: #fff6d8;
   --frame-2: #ffd9f6;
   --ring: linear-gradient(160deg, var(--frame-1), var(--frame-2));
@@ -745,7 +825,6 @@ body {
   mask-composite: exclude;
 }
 
-
 /* Registered so champion-radiance can sweep the gradient angle itself. */
 @property --radiance-angle {
   syntax: "<angle>";
@@ -784,8 +863,8 @@ body {
   }
 }
 
-/* Prestige badges: PNG art per slot, with a tinted CSS star that main.ts
-   reveals via data-fallback only when the probe finds no art. */
+/* Prestige badges: PNG art per slot with a quiet circular metal crest when
+   an image probe reports missing art. */
 .badge {
   position: relative;
   display: grid;
@@ -829,21 +908,23 @@ body {
   --badge-tint: #9be8ff;
 }
 
-.badge[data-fallback="true"]::after {
-  content: "★";
-  color: var(--badge-tint, var(--silver));
-  font-size: 15px;
-  line-height: 1;
-  text-shadow: 0 0 6px currentColor;
+.badge[data-n="10"] {
+  --badge-tint: #ffd75e;
+  --badge-tint-2: #3f8cff;
 }
 
-.badge[data-n="10"][data-fallback="true"]::after {
-  background: linear-gradient(135deg, #ffd75e, #3f8cff);
-  background-clip: text;
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  color: transparent;
-  text-shadow: none;
+.badge[data-fallback="true"]::after {
+  position: absolute;
+  inset: 3px;
+  content: "";
+  border: 1px solid var(--badge-tint, var(--silver));
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 36% 30%, rgba(255, 255, 255, 0.74) 0 1px, transparent 2px),
+    radial-gradient(circle, color-mix(in srgb, var(--badge-tint) 44%, #202636) 0 40%, #121724 72%);
+  box-shadow:
+    inset 0 0 0 2px color-mix(in srgb, var(--badge-tint-2, var(--badge-tint)) 34%, transparent),
+    0 0 5px color-mix(in srgb, var(--badge-tint) 52%, transparent);
 }
 
 .badge[data-count]::before {
@@ -870,6 +951,27 @@ body {
   }
 }
 
+@keyframes xp-sheen {
+  0%,
+  38% {
+    transform: translateX(-160%);
+  }
+  72%,
+  100% {
+    transform: translateX(410%);
+  }
+}
+
+@keyframes xp-gem-glints {
+  0%,
+  100% {
+    opacity: 0.2;
+  }
+  48% {
+    opacity: 0.92;
+  }
+}
+
 @keyframes status-pulse {
   0%,
   100% {
@@ -890,12 +992,13 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .sprite[data-frame] {
+  .sprite[data-frame]::before {
     background-position-x: 0;
   }
 
   .fill::before,
-  .provider-card[data-working] .activity-signal,
+  #progress .xpfill::before,
+  #progress .xpfill::after,
   #action,
   #root[data-rank="champion"] #frame,
   #root[data-rank="godlike"] {

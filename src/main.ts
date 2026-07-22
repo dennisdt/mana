@@ -180,7 +180,7 @@ function applySheets(): void {
     document
       .querySelectorAll<HTMLElement>(`.sprite[data-provider="${provider}"]`)
       .forEach((element) => {
-        element.style.backgroundImage = `url("${url}")`;
+        element.style.setProperty("--sprite-sheet", `url("${url}")`);
       });
   }
 }
@@ -233,6 +233,13 @@ function renderProgress(p: Progress): void {
   resizeRosterContent();
 }
 
+// The HUD is deliberately enlarged, but the 2x sprite atlases must still
+// land at one source pixel per Retina pixel. Counter-scale only the familiar
+// layer so the rest of the widget keeps its comfortable 1.2x size.
+document.documentElement.style.setProperty(
+  "--sprite-resolution-scale",
+  String(1 / WIDGET_ZOOM),
+);
 document.documentElement.style.zoom = String(WIDGET_ZOOM);
 
 const enqueueSizing = createSerialQueue((error) => {

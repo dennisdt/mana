@@ -48,7 +48,7 @@ export function cardHtml(snapshot: Snapshot | undefined, provider: string): stri
     : `<div class="empty">no data - log in via the ${provider} CLI</div>`;
   return `<div class="familiar-slot">${spriteHtml(provider)}</div>
     <div class="provider-content">
-      <div class="head"><strong>${name}</strong><span class="plan"></span><span class="activity-signal" aria-hidden="true"></span><span class="age"></span></div>
+      <div class="head"><strong>${name}</strong><span class="plan"></span><span class="age"></span></div>
       ${rows}
     </div>`;
 }

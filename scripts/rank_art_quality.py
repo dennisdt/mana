@@ -12,8 +12,8 @@ from pathlib import Path
 from PIL import Image
 
 
-ATLAS_SIZE = (448, 336)
-CELL_SIZE = 112
+BASE_ATLAS_SIZE = (448, 336)
+BASE_CELL_SIZE = 112
 
 
 @dataclass(frozen=True)
@@ -49,26 +49,35 @@ class QualityReport:
 
 def atlas_metrics(image: Image.Image) -> AtlasMetrics:
     rgba = image.convert("RGBA")
-    if rgba.size != ATLAS_SIZE:
-        raise ValueError(f"atlas must be {ATLAS_SIZE[0]}x{ATLAS_SIZE[1]}, got {rgba.size}")
+    if rgba.width % BASE_ATLAS_SIZE[0] != 0:
+        raise ValueError(
+            f"atlas must be a Retina multiple of {BASE_ATLAS_SIZE[0]}x{BASE_ATLAS_SIZE[1]}, "
+            f"got {rgba.size}"
+        )
+    retina_scale = rgba.width // BASE_ATLAS_SIZE[0]
+    if retina_scale not in (1, 2) or rgba.height != BASE_ATLAS_SIZE[1] * retina_scale:
+        raise ValueError(
+            f"atlas must be 2x or 4x Retina, got {rgba.size}"
+        )
+    cell_size = BASE_CELL_SIZE * retina_scale
 
     cells: list[CellMetrics] = []
     for row in range(3):
         for column in range(4):
             cell = rgba.crop(
                 (
-                    column * CELL_SIZE,
-                    row * CELL_SIZE,
-                    (column + 1) * CELL_SIZE,
-                    (row + 1) * CELL_SIZE,
+                    column * cell_size,
+                    row * cell_size,
+                    (column + 1) * cell_size,
+                    (row + 1) * cell_size,
                 )
             )
             pixels = list(cell.get_flattened_data())
             visible_indexes = [index for index, pixel in enumerate(pixels) if pixel[3] > 16]
             visible = [pixels[index] for index in visible_indexes]
 
-            xs = [index % CELL_SIZE for index in visible_indexes]
-            ys = [index // CELL_SIZE for index in visible_indexes]
+            xs = [index % cell_size for index in visible_indexes]
+            ys = [index // cell_size for index in visible_indexes]
             if visible_indexes:
                 occupied_area = (max(xs) - min(xs) + 1) * (max(ys) - min(ys) + 1)
                 occupied_density = len(visible_indexes) / occupied_area
@@ -77,8 +86,8 @@ def atlas_metrics(image: Image.Image) -> AtlasMetrics:
 
             boundary_indexes: list[int] = []
             for index in visible_indexes:
-                x = index % CELL_SIZE
-                y = index // CELL_SIZE
+                x = index % cell_size
+                y = index // cell_size
                 neighbors = (
                     (x - 1, y),
                     (x + 1, y),
@@ -87,10 +96,10 @@ def atlas_metrics(image: Image.Image) -> AtlasMetrics:
                 )
                 if any(
                     nx < 0
-                    or nx >= CELL_SIZE
+                    or nx >= cell_size
                     or ny < 0
-                    or ny >= CELL_SIZE
-                    or pixels[ny * CELL_SIZE + nx][3] <= 16
+                    or ny >= cell_size
+                    or pixels[ny * cell_size + nx][3] <= 16
                     for nx, ny in neighbors
                 ):
                     boundary_indexes.append(index)
@@ -121,7 +130,10 @@ def atlas_metrics(image: Image.Image) -> AtlasMetrics:
     return AtlasMetrics(
         cells=cells,
         median_unique_colors=statistics.median(cell.unique_colors for cell in cells),
-        median_visible_pixels=statistics.median(cell.visible_pixels for cell in cells),
+        median_visible_pixels=(
+            statistics.median(cell.visible_pixels for cell in cells)
+            / (retina_scale * retina_scale)
+        ),
         median_outline_coverage=statistics.median(cell.outline_coverage for cell in cells),
         median_occupied_density=statistics.median(cell.occupied_density for cell in cells),
     )
