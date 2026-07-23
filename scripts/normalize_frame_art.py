@@ -10,7 +10,7 @@ import tempfile
 import uuid
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, ImageOps
 
 
 ALPHA_THRESHOLD = 16
@@ -121,6 +121,78 @@ def normalize_piece(source: Image.Image, size: tuple[int, int]) -> Image.Image:
     return canvas
 
 
+def _central_visible_run(source: Image.Image, *, horizontal: bool) -> tuple[int, int]:
+    alpha = source.getchannel("A")
+    primary_size = source.width if horizontal else source.height
+    cross_size = source.height if horizontal else source.width
+    visible = []
+    for position in range(primary_size):
+        bounds = (
+            (position, 0, position + 1, cross_size)
+            if horizontal
+            else (0, position, cross_size, position + 1)
+        )
+        visible.append(alpha.crop(bounds).getbbox() is not None)
+
+    runs: list[tuple[int, int]] = []
+    start: int | None = None
+    for position, is_visible in enumerate([*visible, False]):
+        if is_visible and start is None:
+            start = position
+        elif not is_visible and start is not None:
+            runs.append((start, position))
+            start = None
+
+    if not runs:
+        raise ValueError("rail has no visible authored segment")
+
+    center = primary_size / 2
+    return min(
+        runs,
+        key=lambda run: (
+            0 if run[0] <= center < run[1] else 1,
+            abs((run[0] + run[1]) / 2 - center),
+            -(run[1] - run[0]),
+        ),
+    )
+
+
+def make_repeatable_rail(source: Image.Image, *, horizontal: bool) -> Image.Image:
+    """Build a seamless rail from the central authored pixels without interpolation."""
+    rgba = source.convert("RGBA")
+    primary_size = rgba.width if horizontal else rgba.height
+    cross_size = rgba.height if horizontal else rgba.width
+    if primary_size % 2:
+        raise ValueError("rail primary axis must have an even size")
+
+    run_start, run_end = _central_visible_run(rgba, horizontal=horizontal)
+    half_size = primary_size // 2
+    segment_size = min(half_size, run_end - run_start)
+    segment_start = max(
+        run_start,
+        min((primary_size - segment_size) // 2, run_end - segment_size),
+    )
+    segment = rgba.crop(
+        (segment_start, 0, segment_start + segment_size, cross_size)
+        if horizontal
+        else (0, segment_start, cross_size, segment_start + segment_size)
+    )
+
+    half = Image.new(
+        "RGBA",
+        (half_size, cross_size) if horizontal else (cross_size, half_size),
+        (0, 0, 0, 0),
+    )
+    for offset in range(0, half_size, segment_size):
+        half.paste(segment, (offset, 0) if horizontal else (0, offset))
+
+    mirrored = ImageOps.mirror(half) if horizontal else ImageOps.flip(half)
+    result = Image.new("RGBA", rgba.size, (0, 0, 0, 0))
+    result.paste(half, (0, 0))
+    result.paste(mirrored, (half_size, 0) if horizontal else (0, half_size))
+    return result
+
+
 def _target_directory(family: str, name: str, output_root: Path) -> Path:
     if family == "rank":
         if name not in RANK_NAMES:
@@ -190,6 +262,15 @@ def normalize_frame_kit(
     missing = tuple(piece_name for piece_name in REQUIRED_PIECES[family] if piece_name in empty)
     if missing:
         raise ValueError(f"required pieces are empty: {', '.join(missing)}")
+
+    normalized["rail-h"] = make_repeatable_rail(
+        normalized["rail-h"],
+        horizontal=True,
+    )
+    normalized["rail-v"] = make_repeatable_rail(
+        normalized["rail-v"],
+        horizontal=False,
+    )
 
     destination.parent.mkdir(parents=True, exist_ok=True)
     staging = Path(

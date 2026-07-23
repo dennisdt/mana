@@ -210,7 +210,7 @@ export async function resolveFrameDecoration(
     diagnostics.push(`Prestige frame "${level}" is incomplete.`);
   }
 
-  if (normalizedPrestige > 0 && rank) {
+  if (resolvedPrestige && rank) {
     rank = withoutCrest(rank);
   }
 
@@ -219,7 +219,7 @@ export async function resolveFrameDecoration(
     resolvedTier,
     rank,
     prestige: resolvedPrestige,
-    prestigeText: prestigeLabel(normalizedPrestige),
+    prestigeText: resolvedPrestige ? prestigeLabel(normalizedPrestige) : "",
     diagnostics,
   };
 }

@@ -915,15 +915,46 @@ body {
 }
 
 .frame-prestige-text {
-  margin-top: 1px;
+  position: absolute;
+  top: 26px;
+  left: 50%;
+  display: grid;
+  min-width: 22px;
+  height: 14px;
+  box-sizing: border-box;
+  place-items: center;
+  padding: 0 4px;
   color: #fff8df;
+  border: 1px solid #f2cb68;
+  background: #160d2a;
+  box-shadow:
+    0 0 0 1px #3a205b,
+    inset 0 1px rgba(255, 248, 223, 0.28);
+  clip-path: polygon(
+    3px 0,
+    calc(100% - 3px) 0,
+    100% 3px,
+    100% calc(100% - 3px),
+    calc(100% - 3px) 100%,
+    3px 100%,
+    0 calc(100% - 3px),
+    0 3px
+  );
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 8px;
+  font-size: 9px;
   font-weight: 800;
-  line-height: 1;
+  line-height: 12px;
+  letter-spacing: 0;
   text-shadow:
-    0 1px 1px rgba(17, 9, 31, 0.94),
-    0 0 3px rgba(215, 229, 255, 0.88);
+    1px 0 #08030d,
+    -1px 0 #08030d,
+    0 1px #08030d,
+    0 -1px #08030d;
+  transform: translateX(-50%);
+}
+
+.frame-prestige-text:empty {
+  display: none;
 }
 
 .frame-rail::after,

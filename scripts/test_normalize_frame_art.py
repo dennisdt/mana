@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from normalize_frame_art import (
     PIECE_SPECS,
     main,
+    make_repeatable_rail,
     normalize_piece,
     split_frame_kit,
 )
@@ -42,6 +43,34 @@ def edge_alpha(image: Image.Image) -> list[int]:
         + [alpha.getpixel((0, y)) for y in range(height)]
         + [alpha.getpixel((width - 1, y)) for y in range(height)]
     )
+
+
+def assert_repeatable_rail(test: unittest.TestCase, image: Image.Image, axis: str) -> None:
+    rgba = image.convert("RGBA")
+    alpha = rgba.getchannel("A")
+    width, height = rgba.size
+
+    if axis == "horizontal":
+        test.assertTrue(
+            all(alpha.crop((x, 0, x + 1, height)).getbbox() is not None for x in range(width))
+        )
+        test.assertEqual(
+            [rgba.getpixel((0, y)) for y in range(height)],
+            [rgba.getpixel((width - 1, y)) for y in range(height)],
+        )
+        test.assertIsNone(alpha.crop((0, 0, width, 4)).getbbox())
+        test.assertIsNone(alpha.crop((0, height - 4, width, height)).getbbox())
+        return
+
+    test.assertTrue(
+        all(alpha.crop((0, y, width, y + 1)).getbbox() is not None for y in range(height))
+    )
+    test.assertEqual(
+        [rgba.getpixel((x, 0)) for x in range(width)],
+        [rgba.getpixel((x, height - 1)) for x in range(width)],
+    )
+    test.assertIsNone(alpha.crop((0, 0, 4, height)).getbbox())
+    test.assertIsNone(alpha.crop((width - 4, 0, width, height)).getbbox())
 
 
 def make_fixture_kit(*, empty: set[str] | None = None) -> Image.Image:
@@ -118,6 +147,41 @@ class FrameArtNormalizationTests(unittest.TestCase):
         self.assertEqual(result.getchannel("A").getbbox(), (4, 4, 12, 12))
         self.assertEqual(result.getpixel((4, 4)), (40, 50, 60, 16))
 
+    def test_repeatable_rails_use_an_exact_central_crop_and_mirror(self) -> None:
+        horizontal = Image.new("RGBA", (128, 32), (0, 0, 0, 0))
+        for x in range(32, 96):
+            for y in range(4, 28):
+                horizontal.putpixel((x, y), (x, y, 255 - x, 255))
+
+        horizontal_result = make_repeatable_rail(horizontal, horizontal=True)
+        horizontal_segment = horizontal.crop((32, 0, 96, 32))
+        self.assertEqual(
+            horizontal_result.crop((0, 0, 64, 32)).tobytes(),
+            horizontal_segment.tobytes(),
+        )
+        self.assertEqual(
+            horizontal_result.crop((64, 0, 128, 32)).tobytes(),
+            horizontal_segment.transpose(Image.Transpose.FLIP_LEFT_RIGHT).tobytes(),
+        )
+        assert_repeatable_rail(self, horizontal_result, "horizontal")
+
+        vertical = Image.new("RGBA", (32, 128), (0, 0, 0, 0))
+        for y in range(32, 96):
+            for x in range(4, 28):
+                vertical.putpixel((x, y), (x, y, 255 - y, 255))
+
+        vertical_result = make_repeatable_rail(vertical, horizontal=False)
+        vertical_segment = vertical.crop((0, 32, 32, 96))
+        self.assertEqual(
+            vertical_result.crop((0, 0, 32, 64)).tobytes(),
+            vertical_segment.tobytes(),
+        )
+        self.assertEqual(
+            vertical_result.crop((0, 64, 32, 128)).tobytes(),
+            vertical_segment.transpose(Image.Transpose.FLIP_TOP_BOTTOM).tobytes(),
+        )
+        assert_repeatable_rail(self, vertical_result, "vertical")
+
     def test_cli_writes_non_empty_rank_pieces_under_named_directory(self) -> None:
         with tempfile.TemporaryDirectory() as temp_directory:
             root = Path(temp_directory)
@@ -137,7 +201,10 @@ class FrameArtNormalizationTests(unittest.TestCase):
             )
             with Image.open(written / "rail-h.png") as rail:
                 self.assertEqual(rail.size, PIECE_SPECS["rail-h"])
-                self.assertEqual(max(edge_alpha(rail)), 0)
+                assert_repeatable_rail(self, rail, "horizontal")
+            with Image.open(written / "rail-v.png") as rail:
+                self.assertEqual(rail.size, PIECE_SPECS["rail-v"])
+                assert_repeatable_rail(self, rail, "vertical")
 
     def test_cli_successful_publication_removes_stale_optional_pieces(self) -> None:
         with tempfile.TemporaryDirectory() as temp_directory:

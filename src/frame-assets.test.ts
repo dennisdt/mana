@@ -124,6 +124,31 @@ describe("frame asset registry", () => {
     expect(model.diagnostics.filter((message) => message.includes("Prestige"))).toHaveLength(2);
   });
 
+  it("keeps the rank crest and hides prestige text when every prestige probe is false", async () => {
+    const model = await resolveFrameDecoration("godlike", 3, async (url) =>
+      !url.includes("/frames/prestige/"),
+    );
+
+    expect(model.rank?.crestTop).toBe("/frames/ranks/godlike/crest-top.png");
+    expect(model.prestige).toBeNull();
+    expect(model.prestigeText).toBe("");
+    expect(model.diagnostics.filter((message) => message.includes("Prestige")))
+      .toHaveLength(3);
+  });
+
+  it("keeps the rank crest and hides prestige text when every prestige probe rejects", async () => {
+    const model = await resolveFrameDecoration("emerald", 2, async (url) => {
+      if (url.includes("/frames/prestige/")) throw new Error("decode failed");
+      return true;
+    });
+
+    expect(model.rank?.crestTop).toBe("/frames/ranks/emerald/crest-top.png");
+    expect(model.prestige).toBeNull();
+    expect(model.prestigeText).toBe("");
+    expect(model.diagnostics.filter((message) => message.includes("Prestige")))
+      .toHaveLength(2);
+  });
+
   it("renders roman prestige labels from one through ten and counts above ten", () => {
     expect(Array.from({ length: 10 }, (_, i) => prestigeLabel(i + 1))).toEqual([
       "I",

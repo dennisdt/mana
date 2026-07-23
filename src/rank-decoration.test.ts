@@ -95,6 +95,57 @@ function visiblePixels(image: DecodedPng): number {
   return visible;
 }
 
+function alphaAt(image: DecodedPng, x: number, y: number): number {
+  return image.pixels[(y * image.width + x) * 4 + 3];
+}
+
+function assertRailEdges(
+  image: DecodedPng,
+  piece: "rail-h" | "rail-v",
+  label: string,
+): void {
+  if (piece === "rail-h") {
+    for (let x = 0; x < image.width; x += 1) {
+      expect(
+        Array.from({ length: image.height }, (_, y) => alphaAt(image, x, y))
+          .some((alpha) => alpha > 16),
+        `${label} alpha gap at x=${x}`,
+      ).toBe(true);
+    }
+    for (let y = 0; y < image.height; y += 1) {
+      expect(alphaAt(image, 0, y), `${label} seam y=${y}`)
+        .toBe(alphaAt(image, image.width - 1, y));
+    }
+    for (let y = 0; y < 4; y += 1) {
+      for (let x = 0; x < image.width; x += 1) {
+        expect(alphaAt(image, x, y), `${label} top cross edge`).toBe(0);
+        expect(alphaAt(image, x, image.height - 1 - y), `${label} bottom cross edge`)
+          .toBe(0);
+      }
+    }
+    return;
+  }
+
+  for (let y = 0; y < image.height; y += 1) {
+    expect(
+      Array.from({ length: image.width }, (_, x) => alphaAt(image, x, y))
+        .some((alpha) => alpha > 16),
+      `${label} alpha gap at y=${y}`,
+    ).toBe(true);
+  }
+  for (let x = 0; x < image.width; x += 1) {
+    expect(alphaAt(image, x, 0), `${label} seam x=${x}`)
+      .toBe(alphaAt(image, x, image.height - 1));
+  }
+  for (let x = 0; x < 4; x += 1) {
+    for (let y = 0; y < image.height; y += 1) {
+      expect(alphaAt(image, x, y), `${label} left cross edge`).toBe(0);
+      expect(alphaAt(image, image.width - 1 - x, y), `${label} right cross edge`)
+        .toBe(0);
+    }
+  }
+}
+
 function visibleBounds(image: DecodedPng): [number, number, number, number] | null {
   let left = image.width;
   let top = image.height;
@@ -153,7 +204,11 @@ describe("rank decoration bitmaps", () => {
           ),
         );
         expect([image.width, image.height], label).toEqual(dimensions);
-        expect(edgeAlpha(image), label).toBe(0);
+        if (piece === "rail-h" || piece === "rail-v") {
+          assertRailEdges(image, piece, label);
+        } else {
+          expect(edgeAlpha(image), label).toBe(0);
+        }
         expect(visiblePixels(image), label).toBeGreaterThan(
           image.width * image.height * 0.02,
         );

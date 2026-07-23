@@ -152,6 +152,56 @@ function visibleBounds(image: DecodedPng): {
   };
 }
 
+function pixel(image: DecodedPng, x: number, y: number): number[] {
+  const offset = (y * image.width + x) * 4;
+  return Array.from(image.pixels.subarray(offset, offset + 4));
+}
+
+function assertRepeatableRail(
+  image: DecodedPng,
+  piece: "rail-h" | "rail-v",
+  directory: URL,
+): void {
+  if (piece === "rail-h") {
+    for (let x = 0; x < image.width; x += 1) {
+      expect(
+        Array.from({ length: image.height }, (_, y) => pixel(image, x, y)[3])
+          .some((alpha) => alpha > 16),
+        `${directory.pathname}${piece}.png alpha gap at x=${x}`,
+      ).toBe(true);
+    }
+    for (let y = 0; y < image.height; y += 1) {
+      expect(pixel(image, 0, y), `${directory.pathname}${piece}.png seam y=${y}`)
+        .toEqual(pixel(image, image.width - 1, y));
+    }
+    for (let y = 0; y < 4; y += 1) {
+      for (let x = 0; x < image.width; x += 1) {
+        expect(pixel(image, x, y)[3]).toBe(0);
+        expect(pixel(image, x, image.height - 1 - y)[3]).toBe(0);
+      }
+    }
+    return;
+  }
+
+  for (let y = 0; y < image.height; y += 1) {
+    expect(
+      Array.from({ length: image.width }, (_, x) => pixel(image, x, y)[3])
+        .some((alpha) => alpha > 16),
+      `${directory.pathname}${piece}.png alpha gap at y=${y}`,
+    ).toBe(true);
+  }
+  for (let x = 0; x < image.width; x += 1) {
+    expect(pixel(image, x, 0), `${directory.pathname}${piece}.png seam x=${x}`)
+      .toEqual(pixel(image, x, image.height - 1));
+  }
+  for (let x = 0; x < 4; x += 1) {
+    for (let y = 0; y < image.height; y += 1) {
+      expect(pixel(image, x, y)[3]).toBe(0);
+      expect(pixel(image, image.width - 1 - x, y)[3]).toBe(0);
+    }
+  }
+}
+
 function assertCornerBalance(directory: URL): void {
   const corners = ["corner-tl", "corner-tr", "corner-bl", "corner-br"] as const;
   const images = corners.map((piece) => decodeRgba(new URL(`${piece}.png`, directory)));
@@ -174,28 +224,28 @@ function assertCornerBalance(directory: URL): void {
 }
 
 function assertKit(directory: URL, expectedPieces: readonly PieceName[]): void {
-  const filenames = readdirSync(directory)
-    .filter((name: string) => name.endsWith(".png"))
-    .sort();
+  const filenames = readdirSync(directory).sort();
   expect(filenames).toEqual(expectedPieces.map((name) => `${name}.png`).sort());
 
   for (const piece of expectedPieces) {
     const image = decodeRgba(new URL(`${piece}.png`, directory));
     expect([image.width, image.height], piece).toEqual(PIECE_SPECS[piece]);
-    expect(edgeAlpha(image), piece).toBe(0);
     expect(visiblePixels(image), piece).toBeGreaterThan(image.width * image.height * 0.02);
     const bounds = visibleBounds(image);
     if (piece === "rail-h") {
+      assertRepeatableRail(image, piece, directory);
       expect(
         bounds.width,
         `${directory.pathname}${piece}.png repeat span`,
       ).toBeGreaterThanOrEqual(image.width * 0.65);
-    }
-    if (piece === "rail-v") {
+    } else if (piece === "rail-v") {
+      assertRepeatableRail(image, piece, directory);
       expect(
         bounds.height,
         `${directory.pathname}${piece}.png repeat span`,
       ).toBeGreaterThanOrEqual(image.height * 0.65);
+    } else {
+      expect(edgeAlpha(image), piece).toBe(0);
     }
   }
 

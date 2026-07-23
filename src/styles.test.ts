@@ -243,6 +243,25 @@ describe("generated application perimeter", () => {
     );
   });
 
+  it("anchors prestige identity in a readable pixel plaque and hides an empty label", () => {
+    const label =
+      styles.match(/\.frame-prestige-text\s*\{([^}]*)\}/s)?.[1] ?? "";
+    expect(label).toMatch(/position:\s*absolute/);
+    expect(label).toMatch(/top:\s*26px/);
+    expect(label).toMatch(/left:\s*50%/);
+    expect(label).toMatch(/min-width:\s*22px/);
+    expect(label).toMatch(/height:\s*14px/);
+    expect(label).toMatch(/background:\s*#160d2a/);
+    expect(label).toMatch(/border:\s*1px solid #f2cb68/);
+    expect(label).toMatch(/font-size:\s*9px/);
+    expect(label).toMatch(
+      /text-shadow:\s*1px 0 #08030d,\s*-1px 0 #08030d,\s*0 1px #08030d,\s*0 -1px #08030d/s,
+    );
+    expect(styles).toMatch(
+      /\.frame-prestige-text:empty\s*\{[^}]*display:\s*none/s,
+    );
+  });
+
   it("limits motion to prestige seven through ten highlights and flashes", () => {
     expect(styles).toMatch(
       /#perimeter\[data-prestige="7"\][^{,]*\.frame-rail::after/s,
