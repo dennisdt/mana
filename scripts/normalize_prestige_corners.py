@@ -22,6 +22,12 @@ TRANSPARENT_EDGE = 4
 NORMALIZED_ART_EXTENT = 76
 RIGHT_SOCKET = (88, 28, 96, 68)
 BOTTOM_SOCKET = (28, 88, 68, 96)
+PRODUCTION_SCALE = 2
+PRODUCTION_CORNER_SIZE = CANVAS_SIZE // PRODUCTION_SCALE
+PRODUCTION_RAIL_THICKNESS = 32 // PRODUCTION_SCALE
+PRODUCTION_RAIL_INSET = 16
+PRODUCTION_RAIL_UNDERLAP = 8
+SOCKET_ALIGNMENT_LIMIT = 32
 CORNER_NAMES = ("corner-tl", "corner-tr", "corner-bl", "corner-br")
 KIT_SPECS = {
     "corner-tl.png": (96, 96),
@@ -78,6 +84,191 @@ def _require_connected_art(source: Image.Image) -> None:
 
 def _socket_visible(alpha: Image.Image, bounds: tuple[int, int, int, int]) -> bool:
     return alpha.crop(bounds).getbbox() is not None
+
+
+def _translate_corner(source: Image.Image, x_offset: int, y_offset: int) -> Image.Image:
+    translated = Image.new("RGBA", source.size, (0, 0, 0, 0))
+    translated.alpha_composite(source, (x_offset, y_offset))
+    return translated
+
+
+def _production_alpha(source: Image.Image, size: tuple[int, int]) -> Image.Image:
+    return _threshold_alpha(
+        source.resize(size, Image.Resampling.NEAREST)
+    ).getchannel("A")
+
+
+def _rail_cross_axis(
+    rail: Image.Image,
+    *,
+    horizontal: bool,
+) -> set[int]:
+    size = (
+        (64, PRODUCTION_RAIL_THICKNESS)
+        if horizontal
+        else (PRODUCTION_RAIL_THICKNESS, 64)
+    )
+    alpha = _production_alpha(rail, size)
+    if horizontal:
+        return {
+            y
+            for y in range(alpha.height)
+            if all(
+                alpha.getpixel((x, y)) > ALPHA_THRESHOLD
+                for x in range(alpha.width)
+            )
+        }
+    return {
+        x
+        for x in range(alpha.width)
+        if all(
+            alpha.getpixel((x, y)) > ALPHA_THRESHOLD
+            for y in range(alpha.height)
+        )
+    }
+
+
+def _overlap_metrics_for_axes(
+    corner: Image.Image,
+    horizontal_axis: set[int],
+    vertical_axis: set[int],
+) -> tuple[int, int, int]:
+    """Return horizontal/vertical underlap coverage and intersecting pixels."""
+    corner_alpha = _production_alpha(
+        corner,
+        (PRODUCTION_CORNER_SIZE, PRODUCTION_CORNER_SIZE),
+    )
+    horizontal_columns: set[int] = set()
+    vertical_rows: set[int] = set()
+    intersecting_pixels = 0
+    underlap_end = PRODUCTION_CORNER_SIZE
+    underlap_start = underlap_end - PRODUCTION_RAIL_UNDERLAP
+
+    for x in range(underlap_start, underlap_end):
+        for rail_y in horizontal_axis:
+            y = PRODUCTION_RAIL_INSET + rail_y
+            if corner_alpha.getpixel((x, y)) > ALPHA_THRESHOLD:
+                horizontal_columns.add(x)
+                intersecting_pixels += 1
+
+    for y in range(underlap_start, underlap_end):
+        for rail_x in vertical_axis:
+            x = PRODUCTION_RAIL_INSET + rail_x
+            if corner_alpha.getpixel((x, y)) > ALPHA_THRESHOLD:
+                vertical_rows.add(y)
+                intersecting_pixels += 1
+
+    return (
+        len(horizontal_columns),
+        len(vertical_rows),
+        intersecting_pixels,
+    )
+
+
+def _rail_overlap_metrics(
+    corner: Image.Image,
+    horizontal_rail: Image.Image,
+    vertical_rail: Image.Image,
+) -> tuple[int, int, int]:
+    horizontal_axis = _rail_cross_axis(horizontal_rail, horizontal=True)
+    vertical_axis = _rail_cross_axis(vertical_rail, horizontal=False)
+    if not horizontal_axis:
+        raise ValueError("horizontal prestige rail has no visible pixels")
+    if not vertical_axis:
+        raise ValueError("vertical prestige rail has no visible pixels")
+    return _overlap_metrics_for_axes(corner, horizontal_axis, vertical_axis)
+
+
+def _validate_corner_rail_overlap(
+    corner: Image.Image,
+    horizontal_rail: Image.Image,
+    vertical_rail: Image.Image,
+) -> None:
+    horizontal, vertical, _ = _rail_overlap_metrics(
+        corner,
+        horizontal_rail,
+        vertical_rail,
+    )
+    if horizontal != PRODUCTION_RAIL_UNDERLAP:
+        raise ValueError(
+            "top-left corner does not overlap the horizontal rail "
+            "throughout the production underlap"
+        )
+    if vertical != PRODUCTION_RAIL_UNDERLAP:
+        raise ValueError(
+            "top-left corner does not overlap the vertical rail "
+            "throughout the production underlap"
+        )
+
+
+def _align_corner_to_rails(
+    corner: Image.Image,
+    horizontal_rail: Image.Image,
+    vertical_rail: Image.Image,
+) -> Image.Image:
+    """Translate a normalized joint onto its same-tier production rail masks."""
+    horizontal_axis = _rail_cross_axis(horizontal_rail, horizontal=True)
+    vertical_axis = _rail_cross_axis(vertical_rail, horizontal=False)
+    if not horizontal_axis:
+        raise ValueError("horizontal prestige rail has no visible pixels")
+    if not vertical_axis:
+        raise ValueError("vertical prestige rail has no visible pixels")
+
+    offsets = range(-SOCKET_ALIGNMENT_LIMIT, SOCKET_ALIGNMENT_LIMIT + 1)
+    x_offsets = [
+        offset
+        for offset in offsets
+        if _overlap_metrics_for_axes(
+            _translate_corner(corner, offset, 0),
+            horizontal_axis,
+            vertical_axis,
+        )[1]
+        == PRODUCTION_RAIL_UNDERLAP
+    ]
+    y_offsets = [
+        offset
+        for offset in offsets
+        if _overlap_metrics_for_axes(
+            _translate_corner(corner, 0, offset),
+            horizontal_axis,
+            vertical_axis,
+        )[0]
+        == PRODUCTION_RAIL_UNDERLAP
+    ]
+
+    candidates: list[tuple[tuple[int, int, int], int, int]] = []
+    for y_offset in y_offsets:
+        for x_offset in x_offsets:
+            candidate = _translate_corner(corner, x_offset, y_offset)
+            horizontal, vertical, overlap = _overlap_metrics_for_axes(
+                candidate,
+                horizontal_axis,
+                vertical_axis,
+            )
+            if (
+                horizontal != PRODUCTION_RAIL_UNDERLAP
+                or vertical != PRODUCTION_RAIL_UNDERLAP
+            ):
+                continue
+            score = (
+                overlap,
+                -(abs(x_offset) + abs(y_offset)),
+                -max(abs(x_offset), abs(y_offset)),
+            )
+            candidates.append((score, x_offset, y_offset))
+
+    for _, x_offset, y_offset in sorted(candidates, reverse=True):
+        aligned = _translate_corner(corner, x_offset, y_offset)
+        try:
+            validate_top_left_corner(aligned)
+        except ValueError:
+            continue
+        _validate_corner_rail_overlap(aligned, horizontal_rail, vertical_rail)
+        return aligned
+
+    raise ValueError(
+        "top-left corner cannot be aligned with the same-tier frame rails"
+    )
 
 
 def normalize_top_left_corner(source: Image.Image) -> Image.Image:
@@ -230,7 +421,12 @@ def _validate_staged_kit(
 
     with Image.open(staging / "corner-tl.png") as image:
         top_left = image.convert("RGBA")
+    with Image.open(staging / "rail-h.png") as image:
+        horizontal_rail = image.convert("RGBA")
+    with Image.open(staging / "rail-v.png") as image:
+        vertical_rail = image.convert("RGBA")
     validate_top_left_corner(top_left)
+    _validate_corner_rail_overlap(top_left, horizontal_rail, vertical_rail)
     expected = reflected_corners(top_left)
     for name, reflected in expected.items():
         with Image.open(staging / f"{name}.png") as image:
@@ -256,7 +452,16 @@ def publish_prestige_corners(
     destination = output_root / "prestige" / str(prestige)
     _require_regular_kit(destination)
     expected_non_corner_bytes = _file_bytes(destination, exclude_corners=True)
-    corners = reflected_corners(normalize_top_left_corner(source))
+    with Image.open(destination / "rail-h.png") as image:
+        horizontal_rail = image.convert("RGBA")
+    with Image.open(destination / "rail-v.png") as image:
+        vertical_rail = image.convert("RGBA")
+    top_left = _align_corner_to_rails(
+        normalize_top_left_corner(source),
+        horizontal_rail,
+        vertical_rail,
+    )
+    corners = reflected_corners(top_left)
 
     staging = Path(
         tempfile.mkdtemp(
