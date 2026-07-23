@@ -784,7 +784,10 @@ fn snapshot_for_source(
 
 enum MigrationPublicationStatus {
     Pending,
-    AlreadyPublished(ProgressState),
+    AlreadyPublished {
+        state: ProgressState,
+        bytes: Vec<u8>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -847,7 +850,7 @@ fn require_matching_migration_snapshot(
             }
             Ok(DecodedState::Current(state)) if is_primary => {
                 require_any_migration_snapshot(paths)?;
-                return Ok(MigrationPublicationStatus::AlreadyPublished(state));
+                return Ok(MigrationPublicationStatus::AlreadyPublished { state, bytes });
             }
             Ok(DecodedState::Current(_)) => {
                 return Err(invalid_data(
@@ -883,6 +886,36 @@ fn require_matching_migration_snapshot(
     Err(recovery_error.unwrap_or_else(|| {
         invalid_data("output rebuild has no valid pre-migration source snapshot")
     }))
+}
+
+fn require_authoritative_published_primary(
+    paths: &ProgressPaths,
+    expected_state: &ProgressState,
+    expected_bytes: &[u8],
+) -> std::io::Result<ProgressState> {
+    let metadata = std::fs::symlink_metadata(&paths.primary)?;
+    if !metadata.file_type().is_file() {
+        return Err(invalid_data(
+            "visible progress is not the published regular file",
+        ));
+    }
+
+    let bytes = std::fs::read(&paths.primary)?;
+    if bytes != expected_bytes {
+        return Err(invalid_data(
+            "visible progress differs from the published candidate",
+        ));
+    }
+
+    match decode_state(&bytes)? {
+        DecodedState::Current(state) if state == *expected_state => Ok(state),
+        DecodedState::Current(_) => Err(invalid_data(
+            "visible progress differs from the published candidate",
+        )),
+        DecodedState::NeedsOutputRebuild { .. } => {
+            Err(invalid_data("visible progress is not schema v3"))
+        }
+    }
 }
 
 fn published_primary_is_visible(
@@ -943,9 +976,13 @@ fn publish_rebuilt_state_with_hook(
 
     std::fs::create_dir_all(parent_directory(&paths.primary))?;
     let _publication_lock = acquire_publication_lock(paths)?;
-    if let MigrationPublicationStatus::AlreadyPublished(authoritative) =
-        require_matching_migration_snapshot(paths)?
+    if let MigrationPublicationStatus::AlreadyPublished {
+        state: expected_state,
+        bytes: expected_bytes,
+    } = require_matching_migration_snapshot(paths)?
     {
+        let authoritative =
+            require_authoritative_published_primary(paths, &expected_state, &expected_bytes)?;
         return Ok(RebuildPublicationOutcome::AlreadyPublished(authoritative));
     }
 
@@ -979,9 +1016,13 @@ fn publish_rebuilt_state_with_hook(
     hook(RebuildCheckpoint::TemporarySynced)?;
 
     validate_staged_temporary(&temporary_path.0, &temporary_metadata)?;
-    if let MigrationPublicationStatus::AlreadyPublished(authoritative) =
-        require_matching_migration_snapshot(paths)?
+    if let MigrationPublicationStatus::AlreadyPublished {
+        state: expected_state,
+        bytes: expected_bytes,
+    } = require_matching_migration_snapshot(paths)?
     {
+        let authoritative =
+            require_authoritative_published_primary(paths, &expected_state, &expected_bytes)?;
         return Ok(RebuildPublicationOutcome::AlreadyPublished(authoritative));
     }
     drop(temporary);
