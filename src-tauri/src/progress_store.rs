@@ -71,18 +71,76 @@ impl ProgressPaths {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct ProgressEnvelope {
     pub schema_version: u32,
     pub state: ProgressState,
 }
 
 #[derive(serde::Deserialize)]
-struct LegacyProgressState {
+struct ProgressEnvelopeWire {
+    schema_version: u32,
+    state: ProgressStateWire,
+}
+
+#[derive(serde::Deserialize)]
+struct ProgressStateWire {
     rank: usize,
     prestige: u32,
     prestige_token_floor: u64,
-    tally: TallyState,
+    initialized: bool,
+    tally: TallyStateWire,
+}
+
+#[derive(serde::Deserialize)]
+struct TallyStateWire {
+    total_tokens: u64,
+    claude_offsets: std::collections::HashMap<String, u64>,
+    codex_offsets: std::collections::HashMap<String, u64>,
+    codex_totals: std::collections::HashMap<String, u64>,
+}
+
+#[derive(serde::Deserialize)]
+struct LegacyProgressStateWire {
+    rank: usize,
+    prestige: u32,
+    prestige_token_floor: u64,
+    #[serde(default, rename = "initialized")]
+    _initialized: bool,
+    tally: LegacyTallyStateWire,
+}
+
+#[derive(serde::Deserialize)]
+struct LegacyTallyStateWire {
+    total_tokens: u64,
+    claude_offsets: std::collections::HashMap<String, u64>,
+    #[serde(default)]
+    codex_offsets: std::collections::HashMap<String, u64>,
+    #[serde(default)]
+    codex_totals: std::collections::HashMap<String, u64>,
+}
+
+impl From<TallyStateWire> for TallyState {
+    fn from(wire: TallyStateWire) -> Self {
+        Self {
+            total_tokens: wire.total_tokens,
+            claude_offsets: wire.claude_offsets,
+            codex_offsets: wire.codex_offsets,
+            codex_totals: wire.codex_totals,
+        }
+    }
+}
+
+impl From<ProgressStateWire> for ProgressState {
+    fn from(wire: ProgressStateWire) -> Self {
+        Self {
+            rank: wire.rank,
+            prestige: wire.prestige,
+            prestige_token_floor: wire.prestige_token_floor,
+            initialized: wire.initialized,
+            tally: wire.tally.into(),
+        }
+    }
 }
 
 fn invalid_data(error: impl std::fmt::Display) -> std::io::Error {
@@ -188,21 +246,27 @@ pub fn encode_state(state: &ProgressState) -> std::io::Result<Vec<u8>> {
 pub fn decode_state(bytes: &[u8]) -> std::io::Result<(ProgressState, bool)> {
     let value = serde_json::from_slice::<serde_json::Value>(bytes).map_err(invalid_data)?;
     if value.get("schema_version").is_some() {
-        let envelope = serde_json::from_value::<ProgressEnvelope>(value).map_err(invalid_data)?;
+        let envelope =
+            serde_json::from_value::<ProgressEnvelopeWire>(value).map_err(invalid_data)?;
         if envelope.schema_version != SCHEMA_VERSION {
             return Err(invalid_data("unsupported progress schema version"));
         }
-        return Ok((validate_rank(envelope.state)?, false));
+        return Ok((validate_rank(envelope.state.into())?, false));
     }
 
-    let legacy = serde_json::from_value::<LegacyProgressState>(value).map_err(invalid_data)?;
+    let legacy = serde_json::from_value::<LegacyProgressStateWire>(value).map_err(invalid_data)?;
     let state = ProgressState {
         rank: legacy.rank,
         prestige: legacy.prestige,
         prestige_token_floor: legacy.prestige_token_floor,
         // A successful legacy parse represents existing user progress.
         initialized: true,
-        tally: legacy.tally,
+        tally: TallyState {
+            total_tokens: legacy.tally.total_tokens,
+            claude_offsets: legacy.tally.claude_offsets,
+            codex_offsets: legacy.tally.codex_offsets,
+            codex_totals: legacy.tally.codex_totals,
+        },
     };
     Ok((validate_rank(state)?, true))
 }
@@ -1195,6 +1259,53 @@ mod tests {
         assert_eq!(std::fs::read(&paths.pre_migration).unwrap(), snapshot);
     }
 
+    #[test]
+    fn incomplete_v2_primary_recovers_complete_backup_without_snapshot_or_backup_rotation() {
+        let (_dir, paths) = test_paths("incomplete-v2-primary");
+        let mut damaged = serde_json::to_value(ProgressEnvelope {
+            schema_version: SCHEMA_VERSION,
+            state: state_with_rank(3),
+        })
+        .unwrap();
+        damaged["state"]["tally"]
+            .as_object_mut()
+            .unwrap()
+            .remove("total_tokens");
+        std::fs::write(&paths.primary, serde_json::to_vec(&damaged).unwrap()).unwrap();
+        let backup = encode_state(&state_with_rank(7)).unwrap();
+        std::fs::write(&paths.backup, &backup).unwrap();
+
+        let loaded = load_state(&paths).unwrap();
+
+        assert_eq!(loaded.source, RecoverySource::Backup);
+        assert_eq!(loaded.state, state_with_rank(7));
+        assert!(!paths.pre_migration.exists());
+        assert_eq!(std::fs::read(&paths.backup).unwrap(), backup);
+    }
+
+    #[test]
+    fn incomplete_legacy_primary_recovers_complete_backup_without_snapshot_or_backup_rotation() {
+        let (_dir, paths) = test_paths("incomplete-legacy-primary");
+        let mut damaged = serde_json::from_slice::<serde_json::Value>(include_bytes!(
+            "../tests/fixtures/progress_v1.json"
+        ))
+        .unwrap();
+        damaged["tally"]
+            .as_object_mut()
+            .unwrap()
+            .remove("total_tokens");
+        std::fs::write(&paths.primary, serde_json::to_vec(&damaged).unwrap()).unwrap();
+        let backup = encode_state(&state_with_rank(7)).unwrap();
+        std::fs::write(&paths.backup, &backup).unwrap();
+
+        let loaded = load_state(&paths).unwrap();
+
+        assert_eq!(loaded.source, RecoverySource::Backup);
+        assert_eq!(loaded.state, state_with_rank(7));
+        assert!(!paths.pre_migration.exists());
+        assert_eq!(std::fs::read(&paths.backup).unwrap(), backup);
+    }
+
     #[cfg(unix)]
     #[test]
     fn dangling_candidate_symlink_is_not_treated_as_a_new_install() {
@@ -1305,6 +1416,123 @@ mod tests {
         let (decoded, migrated) = decode_state(&bytes).unwrap();
         assert!(!migrated);
         assert_eq!(decoded, original);
+    }
+
+    #[test]
+    fn rejects_v2_without_initialized() {
+        let mut document = serde_json::to_value(ProgressEnvelope {
+            schema_version: SCHEMA_VERSION,
+            state: fixture_state(),
+        })
+        .unwrap();
+        document["state"]
+            .as_object_mut()
+            .unwrap()
+            .remove("initialized");
+
+        let error = decode_state(&serde_json::to_vec(&document).unwrap()).unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn rejects_v2_without_total_tokens() {
+        let mut document = serde_json::to_value(ProgressEnvelope {
+            schema_version: SCHEMA_VERSION,
+            state: fixture_state(),
+        })
+        .unwrap();
+        document["state"]["tally"]
+            .as_object_mut()
+            .unwrap()
+            .remove("total_tokens");
+
+        let error = decode_state(&serde_json::to_vec(&document).unwrap()).unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn rejects_v2_without_claude_offsets() {
+        let mut document = serde_json::to_value(ProgressEnvelope {
+            schema_version: SCHEMA_VERSION,
+            state: fixture_state(),
+        })
+        .unwrap();
+        document["state"]["tally"]
+            .as_object_mut()
+            .unwrap()
+            .remove("claude_offsets");
+
+        let error = decode_state(&serde_json::to_vec(&document).unwrap()).unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn rejects_v2_without_codex_offsets() {
+        let mut document = serde_json::to_value(ProgressEnvelope {
+            schema_version: SCHEMA_VERSION,
+            state: fixture_state(),
+        })
+        .unwrap();
+        document["state"]["tally"]
+            .as_object_mut()
+            .unwrap()
+            .remove("codex_offsets");
+
+        let error = decode_state(&serde_json::to_vec(&document).unwrap()).unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn rejects_v2_without_codex_totals() {
+        let mut document = serde_json::to_value(ProgressEnvelope {
+            schema_version: SCHEMA_VERSION,
+            state: fixture_state(),
+        })
+        .unwrap();
+        document["state"]["tally"]
+            .as_object_mut()
+            .unwrap()
+            .remove("codex_totals");
+
+        let error = decode_state(&serde_json::to_vec(&document).unwrap()).unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn rejects_legacy_without_total_tokens() {
+        let mut document = serde_json::from_slice::<serde_json::Value>(include_bytes!(
+            "../tests/fixtures/progress_v1.json"
+        ))
+        .unwrap();
+        document["tally"]
+            .as_object_mut()
+            .unwrap()
+            .remove("total_tokens");
+
+        let error = decode_state(&serde_json::to_vec(&document).unwrap()).unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn rejects_legacy_without_claude_offsets() {
+        let mut document = serde_json::from_slice::<serde_json::Value>(include_bytes!(
+            "../tests/fixtures/progress_v1.json"
+        ))
+        .unwrap();
+        document["tally"]
+            .as_object_mut()
+            .unwrap()
+            .remove("claude_offsets");
+
+        let error = decode_state(&serde_json::to_vec(&document).unwrap()).unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
     }
 
     #[test]

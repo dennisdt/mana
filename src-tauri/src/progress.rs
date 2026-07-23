@@ -56,7 +56,6 @@ pub fn prestige_eligible(rank: usize) -> bool {
 /// seen cumulative totals for Codex sessions (whose `token_count` events
 /// carry running totals, not deltas).
 #[derive(Debug, Default, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-#[serde(default)]
 pub struct TallyState {
     pub total_tokens: u64,
     pub claude_offsets: std::collections::HashMap<String, u64>, // path -> consumed byte offset
@@ -184,11 +183,9 @@ pub struct ProgressState {
     pub rank: usize,
     pub prestige: u32,
     pub prestige_token_floor: u64,
-    /// False until the first full scan banks pre-existing token history as
-    /// the XP baseline. `serde(default)` deliberately re-baselines any state
-    /// file written before this field existed: progression earned against
-    /// lifetime history was unearned, so everybody starts back at zero.
-    #[serde(default)]
+    /// False only for a genuinely new install until its first full scan banks
+    /// pre-existing token history as the XP baseline. Every successfully
+    /// decoded legacy progress file is treated as initialized.
     pub initialized: bool,
     pub tally: TallyState,
 }
@@ -604,16 +601,6 @@ mod tests {
         );
         let v = progress_view(&s);
         assert_eq!((v.xp, v.level, v.rank_up_eligible), (0, 1, false));
-    }
-
-    #[test]
-    fn legacy_state_files_rebaseline_on_load() {
-        // Progression earned against pre-update lifetime history was unearned;
-        // files written before `initialized` existed must come back false so
-        // the next scan resets them to zero.
-        let json = r#"{"rank":5,"prestige":1,"prestige_token_floor":7,"tally":{"total_tokens":42,"claude_offsets":{},"codex_offsets":{},"codex_totals":{}}}"#;
-        let s: ProgressState = serde_json::from_slice(json.as_bytes()).unwrap();
-        assert!(!s.initialized);
     }
 
     #[test]
