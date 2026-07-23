@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 const styles = readFileSync(new URL("./styles.css", import.meta.url), "utf8");
 const mainSource = readFileSync(new URL("./main.ts", import.meta.url), "utf8");
 const librs = readFileSync(new URL("../src-tauri/src/lib.rs", import.meta.url), "utf8");
+const indexHtml = readFileSync(new URL("../index.html", import.meta.url), "utf8");
 
 describe("fantasy gaming HUD stylesheet", () => {
   it("keeps the original generated frame as the root fallback", () => {
@@ -147,7 +148,7 @@ describe("fantasy gaming HUD stylesheet", () => {
   });
 
   it("preserves intrinsic card height for native content measurement", () => {
-    expect(styles).toMatch(/#root\s*\{[^}]*flex-direction:\s*column/s);
+    expect(styles).toMatch(/#glass\s*\{[^}]*flex-direction:\s*column/s);
     expect(styles).not.toMatch(/#card\s*\{[^}]*\bflex:\s*1(?:\s|;)/s);
   });
 
@@ -175,14 +176,12 @@ describe("concentric nested corner radii", () => {
     expect(librs).toMatch(/apply_vibrancy\([^;]*Some\(HUD_CORNER_RADIUS\),\s*\)\?;/s);
   });
 
-  it("derives the corner tick radius as HUD radius minus tick inset", () => {
-    expect(styles).toContain("--corner-tick-inset: 5px");
-    expect(styles).toContain(
-      "--corner-tick-radius: max(0px, calc(var(--hud-radius) - var(--corner-tick-inset)))",
-    );
+  it("keeps one continuous fallback outline on the inset glass", () => {
     expect(styles).toMatch(
-      /#root::before\s*\{[^}]*inset:\s*var\(--corner-tick-inset\)[^}]*border-radius:\s*var\(--corner-tick-radius\)/s,
+      /#glass\s*\{[^}]*inset:\s*24px[^}]*border:\s*1px solid[^}]*border-radius:\s*var\(--hud-radius\)/s,
     );
+    expect(styles).not.toMatch(/border-style:\s*(?:dotted|dashed)/);
+    expect(styles).not.toContain("--corner-tick");
   });
 
   it("derives the fill radius as meter frame radius minus its vertical inset", () => {
@@ -196,139 +195,80 @@ describe("concentric nested corner radii", () => {
   });
 });
 
-describe("rank border themes", () => {
-  const tiers: Array<[string, string, string, string]> = [
-    ["plastic", "#b8bec8", "#8b929e", "transparent"],
-    ["wood", "#a5713d", "#6b4726", "transparent"],
-    ["iron", "#9aa3ad", "#5f6770", "rgba(154, 163, 173, 0.25)"],
-    ["bronze", "#cd7f32", "#8c5a24", "rgba(205, 127, 50, 0.3)"],
-    ["silver", "#e6edf5", "#97a3b4", "rgba(230, 237, 245, 0.35)"],
-    ["gold", "#f2c968", "#b8862e", "rgba(242, 201, 104, 0.45)"],
-    ["platinum", "#dfe9ec", "#9fb6c4", "rgba(223, 233, 236, 0.5)"],
-    ["emerald", "#3ddc84", "#147a4a", "rgba(61, 220, 132, 0.5)"],
-    ["diamond", "#dce7eb", "#7f8d99", "rgba(196, 216, 224, 0.2)"],
-    ["master", "#ff5a6e", "#a3172c", "rgba(255, 90, 110, 0.55)"],
-    ["legend", "#b06aff", "#5e1ea8", "rgba(176, 106, 255, 0.55)"],
-    ["champion", "#ffd75e", "#3f8cff", "rgba(255, 215, 94, 0.6)"],
-    ["godlike", "#fff6d8", "#ffd9f6", "rgba(255, 246, 216, 0.75)"],
-  ];
-
-  it("themes every dressed tier with frame custom properties", () => {
-    for (const [tier, frame1, frame2, glow] of tiers) {
-      const rule =
-        styles.match(new RegExp(`#root\\[data-rank="${tier}"\\][^{]*\\{([^}]*)\\}`, "s"))?.[1] ??
-        "";
-      expect(rule, tier).toContain(`--frame-1: ${frame1}`);
-      expect(rule, tier).toContain(`--frame-2: ${frame2}`);
-      expect(rule, tier).toContain(`--frame-glow: ${glow}`);
-    }
+describe("generated application perimeter", () => {
+  it("uses a transparent shell and one inset glass surface", () => {
+    const root = styles.match(/#root\s*\{([^}]*)\}/s)?.[1] ?? "";
+    const glass = styles.match(/#glass\s*\{([^}]*)\}/s)?.[1] ?? "";
+    expect(root).toMatch(/background:\s*transparent/);
+    expect(root).not.toMatch(/\bborder\s*:/);
+    expect(root).not.toMatch(/\bbox-shadow\s*:/);
+    expect(glass).toMatch(/position:\s*absolute/);
+    expect(glass).toMatch(/inset:\s*24px/);
+    expect(glass).toMatch(/width:\s*456px/);
+    expect(styles).not.toMatch(/#root::(?:before|after)/);
   });
 
-  it("consumes the frame variables from the original shared border rule", () => {
+  it("composes native pixel-art pieces without stretching complete frames", () => {
+    const perimeterStyles = styles.slice(styles.indexOf("#perimeter"));
     expect(styles).toMatch(
-      /#root\s*\{[^}]*border:\s*1px solid var\(--frame-1, rgba\(205, 221, 242, 0\.34\)\)/s,
+      /#perimeter\s*\{[^}]*position:\s*absolute[^}]*inset:\s*0[^}]*pointer-events:\s*none/s,
     );
-    expect(styles).toMatch(/#root\s*\{[^}]*0 0 14px var\(--frame-glow, transparent\)/s);
-    expect(styles).toMatch(/#root\s*\{[^}]*0 0 30px var\(--frame-glow-2, transparent\)/s);
+    expect(styles).toMatch(
+      /\.frame-corner\s*\{[^}]*width:\s*48px[^}]*height:\s*48px[^}]*background-size:\s*48px 48px[^}]*image-rendering:\s*pixelated/s,
+    );
+    expect(styles).toMatch(
+      /\.frame-crest\s*\{[^}]*width:\s*96px[^}]*height:\s*48px[^}]*background-size:\s*96px 48px/s,
+    );
+    const horizontal =
+      styles.match(
+        /\.frame-rail--top,\s*\.frame-rail--bottom\s*\{([^}]*)\}/s,
+      )?.[1] ?? "";
+    const vertical =
+      styles.match(
+        /\.frame-rail--right,\s*\.frame-rail--left\s*\{([^}]*)\}/s,
+      )?.[1] ?? "";
+    expect(horizontal).toMatch(/background-size:\s*64px 16px/);
+    expect(horizontal).toMatch(/background-repeat:\s*repeat-x/);
+    expect(vertical).toMatch(/background-size:\s*16px 64px/);
+    expect(vertical).toMatch(/background-repeat:\s*repeat-y/);
+    expect(perimeterStyles).not.toMatch(/background-size:\s*100%\s+100%/);
   });
 
-  it("keeps naked and unranked roots borderless without corner ticks", () => {
+  it("evenly spaces one ornament lane per side", () => {
     expect(styles).toMatch(
-      /#root:not\(\[data-rank\]\)[^{]*\{[^}]*border-color:\s*transparent/s,
+      /\.frame-ornaments--top,[^}]*\.frame-ornaments--bottom\s*\{[^}]*display:\s*grid[^}]*grid-auto-flow:\s*column[^}]*justify-content:\s*space-evenly/s,
     );
-    expect(styles).toMatch(/#root\[data-rank="naked"\][^{]*\{[^}]*border-color:\s*transparent/s);
-    expect(styles).toMatch(/#root:not\(\[data-rank\]\)::before[^{]*\{[^}]*content:\s*none/s);
-    expect(styles).toMatch(/#root\[data-rank="naked"\]::before[^{]*\{[^}]*content:\s*none/s);
+    expect(styles).toMatch(
+      /\.frame-ornaments--right,[^}]*\.frame-ornaments--left\s*\{[^}]*display:\s*grid[^}]*grid-auto-flow:\s*row[^}]*align-content:\s*space-evenly/s,
+    );
   });
 
-  it("rings every dressed tier with the original radius-following gradient", () => {
-    expect(styles).not.toMatch(/border-image\s*:/);
-    expect(styles).toMatch(/#frame\s*\{[^}]*border-radius:\s*var\(--hud-radius\)/s);
-    expect(styles).toMatch(/#frame\s*\{[^}]*-webkit-mask-composite:\s*xor/s);
-    expect(styles).toMatch(/#frame\s*\{[^}]*pointer-events:\s*none/s);
-    expect(styles).toMatch(/#frame\s*\{[^}]*background:\s*var\(--ring, none\)/s);
+  it("limits motion to prestige seven through ten highlights and flashes", () => {
     expect(styles).toMatch(
-      /#frame\s*\{[^}]*border:\s*var\(--frame-w, 1px\) solid transparent/s,
+      /#perimeter\[data-prestige="7"\][^{,]*\.frame-rail::after/s,
     );
-    for (const [tier] of tiers) {
-      expect(styles, tier).toMatch(
-        new RegExp(`#root\\[data-rank="${tier}"\\][^{]*\\{[^}]*--ring:\\s*linear-gradient\\(`, "s"),
-      );
-    }
-  });
-
-  it("escalates the original frame weight with rank", () => {
-    const weights: Array<[string, string]> = [
-      ["plastic", "1px"], ["wood", "1px"],
-      ["iron", "2px"], ["bronze", "2px"], ["silver", "2px"], ["gold", "2px"],
-      ["platinum", "2px"], ["emerald", "2px"], ["diamond", "2px"],
-      ["master", "3px"], ["legend", "3px"], ["champion", "3px"], ["godlike", "3px"],
-    ];
-    for (const [tier, weight] of weights) {
-      expect(styles, tier).toMatch(
-        new RegExp(`#root\\[data-rank="${tier}"\\][^{]*\\{[^}]*--frame-w:\\s*${weight}`, "s"),
-      );
-    }
-  });
-
-  it("tints the original corner ticks from the frame on the top tiers", () => {
-    expect(styles).toMatch(
-      /#root::before[^{]*\{[^}]*var\(--tick-1, rgba\(219, 231, 244, 0\.58\)\)/s,
-    );
-    expect(styles).toMatch(
-      /#root::before[^{]*\{[^}]*var\(--tick-2, rgba\(242, 201, 104, 0\.52\)\)/s,
-    );
-    for (const tier of ["master", "legend", "champion", "godlike"]) {
-      expect(styles, tier).toMatch(
-        new RegExp(`#root\\[data-rank="${tier}"\\][^{]*\\{[^}]*--tick-1:`, "s"),
-      );
-    }
-  });
-
-  it("restores Champion and Godlike motion with reduced-motion coverage", () => {
-    expect(styles).toContain("@keyframes godlike-halo");
-    expect(styles).toContain("@keyframes champion-radiance");
-    expect(styles).toMatch(
-      /#root\[data-rank="godlike"\]\s*\{[^}]*animation:\s*godlike-halo/s,
-    );
-    expect(styles).toMatch(
-      /#root\[data-rank="champion"\] #frame\s*\{[^}]*animation:\s*champion-radiance 6s linear infinite/s,
-    );
+    expect(styles).toContain("@keyframes prestige-rail-light");
+    expect(styles).toContain("@keyframes prestige-corner-flash");
+    expect(styles).not.toContain("champion-radiance");
+    expect(styles).not.toContain("godlike-halo");
     const reducedMotion = styles.slice(
       styles.indexOf("@media (prefers-reduced-motion: reduce)"),
     );
-    expect(reducedMotion).toContain('#root[data-rank="champion"]');
-    expect(reducedMotion).toContain('#root[data-rank="godlike"]');
-  });
-
-  it("restores the original Godlike second outer glow", () => {
-    expect(styles).toMatch(
-      /#root\[data-rank="godlike"\][^{]*\{[^}]*--frame-glow-2:\s*rgba\(190, 225, 255, 0\.4\)/s,
-    );
-  });
-});
-
-describe("prestige badges", () => {
-  it("sizes badges and maps each slot to its art", () => {
-    const badge = styles.match(/\.badge\s*\{([^}]*)\}/s)?.[1] ?? "";
-    expect(badge).toMatch(/width:\s*24px/);
-    expect(badge).toMatch(/height:\s*24px/);
-    for (let n = 1; n <= 10; n += 1) {
-      expect(styles).toContain(`url("/badges/prestige-${n}.png")`);
-    }
-  });
-
-  it("renders the overflow count as a superscript on the tenth badge", () => {
-    expect(styles).toMatch(
-      /\.badge\[data-count\]::before\s*\{[^}]*content:\s*attr\(data-count\)/s,
+    expect(reducedMotion).toMatch(
+      /\.frame-rail::after,[^}]*\.frame-corner::after\s*\{[^}]*animation:\s*none/s,
     );
   });
 
-  it("uses an empty-content circular crest when badge art is missing", () => {
-    expect(styles).toMatch(
-      /\.badge\[data-fallback="true"\]::after\s*\{[^}]*content:\s*""[^}]*border-radius:\s*50%[^}]*radial-gradient/s,
-    );
-    expect(styles).not.toContain("★");
+  it("retires the old CSS frame and stacked badge paths", () => {
+    expect(indexHtml).toContain('<div id="glass">');
+    expect(indexHtml).toContain('<div id="perimeter" aria-hidden="true"></div>');
+    expect(indexHtml).not.toContain('id="frame"');
+    expect(indexHtml).not.toContain('class="badges"');
+    expect(styles).not.toContain("#frame");
+    expect(styles).not.toContain(".badge");
+    expect(mainSource).not.toContain("badgeSlots");
+    expect(mainSource).not.toContain("badgeHtml");
+    expect(mainSource).not.toContain("/badges/");
   });
 });
 

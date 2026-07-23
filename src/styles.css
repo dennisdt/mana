@@ -14,13 +14,9 @@
   --low-2: #ff365d;
   --low-glow: rgba(255, 54, 93, 0.58);
   --meter-frame-art: url("/hud/mana-bar-frame.png");
-  /* Concentric corners: inner radius = outer radius - inset, clamped at a
-     small minimum. --hud-radius must stay equal to HUD_CORNER_RADIUS in
-     src-tauri/src/lib.rs (the vibrancy blur layer), or the blur corner and
-     the CSS border corner visibly diverge. */
+  /* --hud-radius must stay equal to HUD_CORNER_RADIUS in
+     src-tauri/src/lib.rs so the native blur and inset glass agree. */
   --hud-radius: 8px;
-  --corner-tick-inset: 5px;
-  --corner-tick-radius: max(0px, calc(var(--hud-radius) - var(--corner-tick-inset)));
   --meter-width: 144px;
   --meter-height: 20px;
   --meter-inset-x: 14px;
@@ -31,9 +27,7 @@
      at --meter-inset-y, so its corners follow the same concentric rule. */
   --meter-frame-radius: var(--hud-radius);
   --fill-radius: max(1px, calc(var(--meter-frame-radius) - var(--meter-inset-y)));
-  /* The xp bar nests inside the footer at the corner-tick inset, so its
-     rounding follows the same concentric rule as the tick outline. */
-  --xpbar-radius: max(1px, calc(var(--hud-radius) - var(--corner-tick-inset)));
+  --xpbar-radius: 3px;
   /* Pill controls double the HUD radius so every rounded element belongs to
      the same corner family instead of introducing ad-hoc radii. */
   --pill-radius: calc(var(--hud-radius) * 2);
@@ -55,49 +49,39 @@ body {
 #root {
   position: relative;
   isolation: isolate;
-  display: flex;
-  flex-direction: column;
   box-sizing: border-box;
   width: 100%;
   height: 100vh;
   min-height: 100%;
   overflow: hidden;
-  border: 1px solid var(--frame-1, rgba(205, 221, 242, 0.34));
+  background: transparent;
+}
+
+#glass {
+  position: absolute;
+  z-index: 1;
+  inset: 24px;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: 456px;
+  overflow: visible;
+  border: 1px solid rgba(205, 221, 242, 0.34);
   border-radius: var(--hud-radius);
-  background: linear-gradient(180deg, rgba(29, 34, 47, 0.75), rgba(8, 10, 17, 0.86));
+  background: linear-gradient(
+    180deg,
+    rgba(29, 34, 47, 0.75),
+    rgba(8, 10, 17, 0.86)
+  );
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.15),
     inset 0 -1px 0 rgba(0, 0, 0, 0.52),
     inset 0 0 30px rgba(86, 71, 119, 0.08),
-    0 10px 28px rgba(0, 0, 0, 0.24),
-    0 0 14px var(--frame-glow, transparent),
-    0 0 30px var(--frame-glow-2, transparent);
+    0 10px 28px rgba(0, 0, 0, 0.24);
 }
 
-#root::before,
-#root::after {
-  position: absolute;
-  z-index: 0;
-  content: "";
-  pointer-events: none;
-}
-
-#root::before {
-  inset: var(--corner-tick-inset);
-  border-radius: var(--corner-tick-radius);
-  background:
-    linear-gradient(90deg, var(--tick-1, rgba(219, 231, 244, 0.58)), var(--tick-1, rgba(219, 231, 244, 0.58))) left top / 20px 1px no-repeat,
-    linear-gradient(180deg, var(--tick-1, rgba(219, 231, 244, 0.58)), var(--tick-1, rgba(219, 231, 244, 0.58))) left top / 1px 9px no-repeat,
-    linear-gradient(90deg, var(--tick-2, rgba(242, 201, 104, 0.52)), var(--tick-2, rgba(242, 201, 104, 0.52))) right bottom / 20px 1px no-repeat,
-    linear-gradient(180deg, var(--tick-2, rgba(242, 201, 104, 0.52)), var(--tick-2, rgba(242, 201, 104, 0.52))) right bottom / 1px 9px no-repeat;
-}
-
-#root::after {
-  top: 0;
-  right: 24px;
-  left: 24px;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(249, 246, 222, 0.72), transparent);
+#root[data-frame-art="true"] #glass {
+  border-color: transparent;
 }
 
 #content {
@@ -153,16 +137,6 @@ body {
   font-size: 10px;
   line-height: 1;
   font-variant-numeric: tabular-nums;
-}
-
-#progress .badges {
-  display: flex;
-  flex: none;
-  gap: 4px;
-}
-
-#progress .badges:empty {
-  display: none;
 }
 
 #progress .level {
@@ -279,11 +253,11 @@ body {
 
 .ceremony-panel::before {
   position: absolute;
-  inset: var(--corner-tick-inset);
+  inset: 5px;
   content: "";
   pointer-events: none;
   border: 1px solid var(--c2);
-  border-radius: var(--corner-tick-radius);
+  border-radius: 3px;
   opacity: 0.38;
 }
 
@@ -636,21 +610,10 @@ body {
   line-height: 1.4;
 }
 
-/* Rank border themes retain the original app shell. Each known rank also
-   selects exactly one meter foreground; all other frame tokens stay on the
-   pre-iteration ring, corner-tick, action, and ceremony path. */
+/* Rank themes select the mana-bar foreground and tint interactive ceremony
+   surfaces. Generated perimeter art is resolved independently. */
 #root[data-rank="naked"] {
   --meter-frame-art: url("/hud/mana-bar-frame-naked.png");
-}
-
-#root:not([data-rank]),
-#root[data-rank="naked"] {
-  border-color: transparent;
-}
-
-#root:not([data-rank])::before,
-#root[data-rank="naked"]::before {
-  content: none;
 }
 
 #root[data-rank="plastic"],
@@ -658,8 +621,6 @@ body {
   --meter-frame-art: url("/hud/mana-bar-frame-plastic.png");
   --frame-1: #b8bec8;
   --frame-2: #8b929e;
-  --ring: linear-gradient(160deg, var(--frame-1), var(--frame-2));
-  --frame-w: 1px;
   --frame-glow: transparent;
 }
 
@@ -668,8 +629,6 @@ body {
   --meter-frame-art: url("/hud/mana-bar-frame-wood.png");
   --frame-1: #a5713d;
   --frame-2: #6b4726;
-  --ring: linear-gradient(160deg, var(--frame-1), var(--frame-2));
-  --frame-w: 1px;
   --frame-glow: transparent;
 }
 
@@ -678,8 +637,6 @@ body {
   --meter-frame-art: url("/hud/mana-bar-frame-iron.png");
   --frame-1: #9aa3ad;
   --frame-2: #5f6770;
-  --ring: linear-gradient(160deg, var(--frame-1), var(--frame-2));
-  --frame-w: 2px;
   --frame-glow: rgba(154, 163, 173, 0.25);
 }
 
@@ -688,8 +645,6 @@ body {
   --meter-frame-art: url("/hud/mana-bar-frame-bronze.png");
   --frame-1: #cd7f32;
   --frame-2: #8c5a24;
-  --ring: linear-gradient(160deg, var(--frame-1), var(--frame-2));
-  --frame-w: 2px;
   --frame-glow: rgba(205, 127, 50, 0.3);
 }
 
@@ -698,8 +653,6 @@ body {
   --meter-frame-art: url("/hud/mana-bar-frame-silver.png");
   --frame-1: #e6edf5;
   --frame-2: #97a3b4;
-  --ring: linear-gradient(160deg, var(--frame-1), var(--frame-2));
-  --frame-w: 2px;
   --frame-glow: rgba(230, 237, 245, 0.35);
 }
 
@@ -708,8 +661,6 @@ body {
   --meter-frame-art: url("/hud/mana-bar-frame-gold.png");
   --frame-1: #f2c968;
   --frame-2: #b8862e;
-  --ring: linear-gradient(160deg, var(--frame-1), var(--frame-2));
-  --frame-w: 2px;
   --frame-glow: rgba(242, 201, 104, 0.45);
 }
 
@@ -718,8 +669,6 @@ body {
   --meter-frame-art: url("/hud/mana-bar-frame-platinum.png");
   --frame-1: #dfe9ec;
   --frame-2: #9fb6c4;
-  --ring: linear-gradient(160deg, var(--frame-1), var(--frame-2));
-  --frame-w: 2px;
   --frame-glow: rgba(223, 233, 236, 0.5);
 }
 
@@ -728,8 +677,6 @@ body {
   --meter-frame-art: url("/hud/mana-bar-frame-emerald.png");
   --frame-1: #3ddc84;
   --frame-2: #147a4a;
-  --ring: linear-gradient(160deg, var(--frame-1), var(--frame-2));
-  --frame-w: 2px;
   --frame-glow: rgba(61, 220, 132, 0.5);
 }
 
@@ -738,8 +685,6 @@ body {
   --meter-frame-art: url("/hud/mana-bar-frame-diamond.png");
   --frame-1: #dce7eb;
   --frame-2: #7f8d99;
-  --ring: linear-gradient(160deg, var(--frame-1), var(--frame-2));
-  --frame-w: 2px;
   --frame-glow: rgba(196, 216, 224, 0.2);
 }
 
@@ -748,10 +693,6 @@ body {
   --meter-frame-art: url("/hud/mana-bar-frame-master.png");
   --frame-1: #ff5a6e;
   --frame-2: #a3172c;
-  --ring: linear-gradient(160deg, var(--frame-1), var(--frame-2));
-  --frame-w: 3px;
-  --tick-1: var(--frame-1);
-  --tick-2: var(--frame-2);
   --frame-glow: rgba(255, 90, 110, 0.55);
 }
 
@@ -760,10 +701,6 @@ body {
   --meter-frame-art: url("/hud/mana-bar-frame-legend.png");
   --frame-1: #b06aff;
   --frame-2: #5e1ea8;
-  --ring: linear-gradient(160deg, var(--frame-1), var(--frame-2));
-  --frame-w: 3px;
-  --tick-1: var(--frame-1);
-  --tick-2: var(--frame-2);
   --frame-glow: rgba(176, 106, 255, 0.55);
 }
 
@@ -772,10 +709,6 @@ body {
   --meter-frame-art: url("/hud/mana-bar-frame-champion.png");
   --frame-1: #ffd75e;
   --frame-2: #3f8cff;
-  --ring: linear-gradient(var(--radiance-angle), var(--frame-1), var(--frame-2));
-  --frame-w: 3px;
-  --tick-1: var(--frame-1);
-  --tick-2: var(--frame-2);
   --frame-glow: rgba(255, 215, 94, 0.6);
 }
 
@@ -784,12 +717,7 @@ body {
   --meter-frame-art: url("/hud/mana-bar-frame-godlike.png");
   --frame-1: #fff6d8;
   --frame-2: #ffd9f6;
-  --ring: linear-gradient(160deg, var(--frame-1), var(--frame-2));
-  --frame-w: 3px;
-  --tick-1: var(--frame-1);
-  --tick-2: var(--frame-2);
   --frame-glow: rgba(255, 246, 216, 0.75);
-  --frame-glow-2: rgba(190, 225, 255, 0.4);
 }
 
 /* Prestige ceremonies would otherwise inherit the godlike frame from #root;
@@ -800,142 +728,354 @@ body {
   --frame-glow: rgba(242, 201, 104, 0.5);
 }
 
-/* Metallic rank ring. border-image ignores border-radius and would poke
-   square gradient corners into the rounded frame, so tier gradients paint
-   on this overlay and the xor mask keeps only the border band, which
-   follows --hud-radius. Root's solid border-color stays as the fallback
-   underneath. */
-#frame {
+#perimeter {
   position: absolute;
-  z-index: 0;
-  inset: -1px;
+  z-index: 2;
+  inset: 0;
+  overflow: hidden;
   pointer-events: none;
-  background: var(--ring, none);
-  border: var(--frame-w, 1px) solid transparent;
-  border-radius: var(--hud-radius);
-  -webkit-mask:
-    linear-gradient(#fff 0 0) padding-box,
-    linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask:
-    linear-gradient(#fff 0 0) padding-box,
-    linear-gradient(#fff 0 0);
-  mask-composite: exclude;
 }
 
-/* Registered so champion-radiance can sweep the gradient angle itself. */
-@property --radiance-angle {
-  syntax: "<angle>";
-  inherits: false;
-  initial-value: 160deg;
-}
-
-#root[data-rank="champion"] #frame {
-  animation: champion-radiance 6s linear infinite;
-}
-
-/* The final tier's halo breathes: same shadow stack as the shared #root
-   rule, swelling only the two tier glows. */
-#root[data-rank="godlike"] {
-  animation: godlike-halo 4s ease-in-out infinite alternate;
-}
-
-@keyframes godlike-halo {
-  from {
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.15),
-      inset 0 -1px 0 rgba(0, 0, 0, 0.52),
-      inset 0 0 30px rgba(86, 71, 119, 0.08),
-      0 10px 28px rgba(0, 0, 0, 0.24),
-      0 0 14px var(--frame-glow, transparent),
-      0 0 30px var(--frame-glow-2, transparent);
-  }
-  to {
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.15),
-      inset 0 -1px 0 rgba(0, 0, 0, 0.52),
-      inset 0 0 30px rgba(86, 71, 119, 0.08),
-      0 10px 28px rgba(0, 0, 0, 0.24),
-      0 0 24px var(--frame-glow, transparent),
-      0 0 48px var(--frame-glow-2, transparent);
-  }
-}
-
-/* Prestige badges: PNG art per slot with a quiet circular metal crest when
-   an image probe reports missing art. */
-.badge {
-  position: relative;
-  display: grid;
-  flex: none;
-  width: 24px;
-  height: 24px;
-  place-items: center;
-  background: center / contain no-repeat;
-}
-
-.badge[data-n="1"] { background-image: url("/badges/prestige-1.png"); }
-.badge[data-n="2"] { background-image: url("/badges/prestige-2.png"); }
-.badge[data-n="3"] { background-image: url("/badges/prestige-3.png"); }
-.badge[data-n="4"] { background-image: url("/badges/prestige-4.png"); }
-.badge[data-n="5"] { background-image: url("/badges/prestige-5.png"); }
-.badge[data-n="6"] { background-image: url("/badges/prestige-6.png"); }
-.badge[data-n="7"] { background-image: url("/badges/prestige-7.png"); }
-.badge[data-n="8"] { background-image: url("/badges/prestige-8.png"); }
-.badge[data-n="9"] { background-image: url("/badges/prestige-9.png"); }
-.badge[data-n="10"] { background-image: url("/badges/prestige-10.png"); }
-
-.badge[data-fallback="true"] {
-  background-image: none;
-}
-
-.badge[data-n="1"],
-.badge[data-n="2"],
-.badge[data-n="3"] {
-  --badge-tint: #dbe7f4;
-}
-
-.badge[data-n="4"],
-.badge[data-n="5"],
-.badge[data-n="6"] {
-  --badge-tint: #f2c968;
-}
-
-.badge[data-n="7"],
-.badge[data-n="8"],
-.badge[data-n="9"] {
-  --badge-tint: #9be8ff;
-}
-
-.badge[data-n="10"] {
-  --badge-tint: #ffd75e;
-  --badge-tint-2: #3f8cff;
-}
-
-.badge[data-fallback="true"]::after {
+.frame-rail,
+.frame-corner,
+.frame-ornaments,
+.frame-crest {
   position: absolute;
-  inset: 3px;
-  content: "";
-  border: 1px solid var(--badge-tint, var(--silver));
-  border-radius: 50%;
-  background:
-    radial-gradient(circle at 36% 30%, rgba(255, 255, 255, 0.74) 0 1px, transparent 2px),
-    radial-gradient(circle, color-mix(in srgb, var(--badge-tint) 44%, #202636) 0 40%, #121724 72%);
-  box-shadow:
-    inset 0 0 0 2px color-mix(in srgb, var(--badge-tint-2, var(--badge-tint)) 34%, transparent),
-    0 0 5px color-mix(in srgb, var(--badge-tint) 52%, transparent);
+  box-sizing: border-box;
+  pointer-events: none;
 }
 
-.badge[data-count]::before {
-  position: absolute;
-  top: -4px;
-  right: -5px;
+.frame-rail {
+  overflow: hidden;
+  background-image:
+    var(--frame-prestige-piece, none),
+    var(--frame-rank-piece, none);
+  background-position: center;
+  image-rendering: pixelated;
+}
+
+.frame-rail--top,
+.frame-rail--bottom {
+  right: 48px;
+  left: 48px;
+  height: 16px;
+  background-repeat: repeat-x;
+  background-size: 64px 16px;
+}
+
+.frame-rail--top {
+  top: 16px;
+  --frame-rank-piece: var(--frame-rank-rail-top);
+  --frame-prestige-piece: var(--frame-prestige-rail-top);
+}
+
+.frame-rail--bottom {
+  bottom: 16px;
+  --frame-rank-piece: var(--frame-rank-rail-bottom);
+  --frame-prestige-piece: var(--frame-prestige-rail-bottom);
+}
+
+.frame-rail--right,
+.frame-rail--left {
+  top: 48px;
+  bottom: 48px;
+  width: 16px;
+  background-repeat: repeat-y;
+  background-size: 16px 64px;
+}
+
+.frame-rail--right {
+  right: 16px;
+  --frame-rank-piece: var(--frame-rank-rail-right);
+  --frame-prestige-piece: var(--frame-prestige-rail-right);
+}
+
+.frame-rail--left {
+  left: 16px;
+  --frame-rank-piece: var(--frame-rank-rail-left);
+  --frame-prestige-piece: var(--frame-prestige-rail-left);
+}
+
+.frame-corner {
+  width: 48px;
+  height: 48px;
+  background-image:
+    var(--frame-prestige-corner-piece, none),
+    var(--frame-rank-corner-piece, none);
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 48px 48px, 48px 48px;
+  image-rendering: pixelated;
+}
+
+.frame-corner--tl {
+  top: 0;
+  left: 0;
+  --frame-rank-corner-piece: var(--frame-rank-corner-tl);
+  --frame-prestige-corner-piece: var(--frame-prestige-corner-tl);
+}
+
+.frame-corner--tr {
+  top: 0;
+  right: 0;
+  --frame-rank-corner-piece: var(--frame-rank-corner-tr);
+  --frame-prestige-corner-piece: var(--frame-prestige-corner-tr);
+}
+
+.frame-corner--bl {
+  bottom: 0;
+  left: 0;
+  --frame-rank-corner-piece: var(--frame-rank-corner-bl);
+  --frame-prestige-corner-piece: var(--frame-prestige-corner-bl);
+}
+
+.frame-corner--br {
+  right: 0;
+  bottom: 0;
+  --frame-rank-corner-piece: var(--frame-rank-corner-br);
+  --frame-prestige-corner-piece: var(--frame-prestige-corner-br);
+}
+
+.frame-ornaments {
   z-index: 1;
-  content: attr(data-count);
-  color: var(--gold);
+}
+
+.frame-ornaments--top,
+.frame-ornaments--bottom {
+  right: 48px;
+  left: 48px;
+  display: grid;
+  height: 16px;
+  grid-auto-flow: column;
+  justify-content: space-evenly;
+}
+
+.frame-ornaments--top {
+  top: 16px;
+  --frame-ornament-piece: var(--frame-ornament-top);
+}
+
+.frame-ornaments--bottom {
+  bottom: 16px;
+  --frame-ornament-piece: var(--frame-ornament-bottom);
+}
+
+.frame-ornaments--right,
+.frame-ornaments--left {
+  top: 48px;
+  bottom: 48px;
+  display: grid;
+  width: 16px;
+  grid-auto-flow: row;
+  align-content: space-evenly;
+}
+
+.frame-ornaments--right {
+  right: 16px;
+  --frame-ornament-piece: var(--frame-ornament-right);
+}
+
+.frame-ornaments--left {
+  left: 16px;
+  --frame-ornament-piece: var(--frame-ornament-left);
+}
+
+.frame-ornament {
+  display: block;
+  width: 32px;
+  height: 16px;
+  background-image: var(--frame-ornament-piece, none);
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 32px 16px;
+  image-rendering: pixelated;
+}
+
+.frame-ornaments--right .frame-ornament,
+.frame-ornaments--left .frame-ornament {
+  width: 16px;
+  height: 32px;
+  background-size: 16px 32px;
+}
+
+.frame-crest {
+  top: 0;
+  left: 50%;
+  z-index: 2;
+  display: grid;
+  width: 96px;
+  height: 48px;
+  place-items: center;
+  background-image: var(--frame-crest, none);
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 96px 48px;
+  image-rendering: pixelated;
+  transform: translateX(-50%);
+}
+
+.frame-prestige-text {
+  margin-top: 1px;
+  color: #fff8df;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 8px;
-  font-weight: 750;
+  font-weight: 800;
   line-height: 1;
-  text-shadow: 0 0 3px rgba(0, 0, 0, 0.8);
+  text-shadow:
+    0 1px 1px rgba(17, 9, 31, 0.94),
+    0 0 3px rgba(215, 229, 255, 0.88);
+}
+
+.frame-rail::after,
+.frame-corner::after {
+  position: absolute;
+  inset: 0;
+  content: "";
+  opacity: 0;
+  pointer-events: none;
+}
+
+.frame-rail::after {
+  background: linear-gradient(
+    100deg,
+    transparent 0 42%,
+    rgba(255, 255, 255, 0.78) 49%,
+    rgba(174, 224, 255, 0.62) 52%,
+    transparent 59% 100%
+  );
+  background-repeat: no-repeat;
+  background-size: 38% 100%;
+  -webkit-mask-image: var(--frame-prestige-piece, none);
+  -webkit-mask-position: center;
+  mask-image: var(--frame-prestige-piece, none);
+  mask-position: center;
+}
+
+.frame-rail--top::after,
+.frame-rail--bottom::after {
+  -webkit-mask-repeat: repeat-x;
+  -webkit-mask-size: 64px 16px;
+  mask-repeat: repeat-x;
+  mask-size: 64px 16px;
+}
+
+.frame-rail--right::after,
+.frame-rail--left::after {
+  background: linear-gradient(
+    170deg,
+    transparent 0 42%,
+    rgba(255, 255, 255, 0.78) 49%,
+    rgba(174, 224, 255, 0.62) 52%,
+    transparent 59% 100%
+  );
+  background-size: 100% 38%;
+  -webkit-mask-repeat: repeat-y;
+  -webkit-mask-size: 16px 64px;
+  mask-repeat: repeat-y;
+  mask-size: 16px 64px;
+}
+
+.frame-corner::after {
+  background: rgba(255, 252, 226, 0.78);
+  -webkit-mask-image: var(--frame-prestige-corner-piece, none);
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-position: center;
+  -webkit-mask-size: 48px 48px;
+  mask-image: var(--frame-prestige-corner-piece, none);
+  mask-repeat: no-repeat;
+  mask-position: center;
+  mask-size: 48px 48px;
+}
+
+#perimeter[data-prestige="7"] .frame-rail::after,
+#perimeter[data-prestige="8"] .frame-rail::after,
+#perimeter[data-prestige="9"] .frame-rail::after,
+#perimeter[data-prestige="10"] .frame-rail::after {
+  animation: prestige-rail-light 7.2s ease-in-out infinite;
+}
+
+#perimeter[data-prestige="7"] .frame-rail--right::after,
+#perimeter[data-prestige="7"] .frame-rail--left::after,
+#perimeter[data-prestige="8"] .frame-rail--right::after,
+#perimeter[data-prestige="8"] .frame-rail--left::after,
+#perimeter[data-prestige="9"] .frame-rail--right::after,
+#perimeter[data-prestige="9"] .frame-rail--left::after,
+#perimeter[data-prestige="10"] .frame-rail--right::after,
+#perimeter[data-prestige="10"] .frame-rail--left::after {
+  animation-name: prestige-rail-light-vertical;
+}
+
+#perimeter[data-prestige="7"] .frame-corner::after,
+#perimeter[data-prestige="8"] .frame-corner::after,
+#perimeter[data-prestige="9"] .frame-corner::after,
+#perimeter[data-prestige="10"] .frame-corner::after {
+  animation: prestige-corner-flash 6.4s ease-in-out infinite;
+}
+
+.frame-corner--tr::after {
+  animation-delay: -1.6s !important;
+}
+
+.frame-corner--br::after {
+  animation-delay: -3.2s !important;
+}
+
+.frame-corner--bl::after {
+  animation-delay: -4.8s !important;
+}
+
+@keyframes prestige-rail-light {
+  0%,
+  68% {
+    background-position: -60% 0;
+    opacity: 0;
+  }
+  73% {
+    opacity: 0.7;
+  }
+  86% {
+    background-position: 160% 0;
+    opacity: 0.48;
+  }
+  90%,
+  100% {
+    background-position: 160% 0;
+    opacity: 0;
+  }
+}
+
+@keyframes prestige-corner-flash {
+  0%,
+  76%,
+  100% {
+    opacity: 0;
+  }
+  81% {
+    opacity: 0.52;
+  }
+  87% {
+    opacity: 0.08;
+  }
+}
+
+@keyframes prestige-rail-light-vertical {
+  0%,
+  68% {
+    background-position: 0 -60%;
+    opacity: 0;
+  }
+  73% {
+    opacity: 0.7;
+  }
+  86% {
+    background-position: 0 160%;
+    opacity: 0.48;
+  }
+  90%,
+  100% {
+    background-position: 0 160%;
+    opacity: 0;
+  }
 }
 
 @keyframes magic-glint {
@@ -980,15 +1120,6 @@ body {
   }
 }
 
-@keyframes champion-radiance {
-  from {
-    --radiance-angle: 0deg;
-  }
-  to {
-    --radiance-angle: 360deg;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .sprite[data-frame]::before {
     background-position-x: 0;
@@ -998,8 +1129,8 @@ body {
   #progress .xpfill::before,
   #progress .xpfill::after,
   #action,
-  #root[data-rank="champion"] #frame,
-  #root[data-rank="godlike"] {
+  .frame-rail::after,
+  .frame-corner::after {
     animation: none;
   }
 

@@ -1,5 +1,7 @@
 export const ROSTER_WIDTH = 456;
 export const INITIAL_ROSTER_HEIGHT = 175;
+export const FRAME_BLEED = 24;
+export const WINDOW_WIDTH = ROSTER_WIDTH + FRAME_BLEED * 2;
 
 /// The HUD renders at its compact authored scale. The window itself is
 /// deliberately not user-resizable.
@@ -11,8 +13,10 @@ type Rect = Point & Size;
 
 export function scaledRosterSize(cardScrollHeight: number, scale: number): Size {
   return {
-    width: Math.round(ROSTER_WIDTH * scale),
-    height: Math.ceil(rosterHeight(cardScrollHeight) * scale),
+    width: Math.round(WINDOW_WIDTH * scale),
+    height: Math.ceil(
+      (rosterHeight(cardScrollHeight) + FRAME_BLEED * 2) * scale,
+    ),
   };
 }
 

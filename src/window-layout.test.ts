@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import tauriConfig from "../src-tauri/tauri.conf.json";
 import {
+  FRAME_BLEED,
   INITIAL_ROSTER_HEIGHT,
   ROSTER_WIDTH,
+  WINDOW_WIDTH,
   WIDGET_ZOOM,
   createSerialQueue,
   rosterHeight,
@@ -16,14 +18,16 @@ describe("permanent roster geometry", () => {
       width: 456,
       height: 175,
     });
+    expect(FRAME_BLEED).toBe(24);
+    expect(WINDOW_WIDTH).toBe(504);
     const mainWindow = tauriConfig.app.windows.find(
       ({ label }) => label === "main",
     );
     // The config window opens at the compact fixed zoom so first paint
     // matches what the frontend immediately resizes to.
     expect(mainWindow).toMatchObject({
-      width: 456,
-      height: 175,
+      width: 504,
+      height: 223,
     });
   });
 
@@ -41,7 +45,7 @@ describe("permanent roster geometry", () => {
     expect(
       rosterOrigin(
         { x: 500, y: 80 },
-        { width: ROSTER_WIDTH, height: 175 },
+        { width: WINDOW_WIDTH, height: 223 },
         { x: 0, y: 0, width: 2880, height: 1800 },
         2,
       ),
@@ -52,26 +56,26 @@ describe("permanent roster geometry", () => {
     expect(
       rosterOrigin(
         { x: 2300, y: 1700 },
-        { width: ROSTER_WIDTH, height: 210 },
+        { width: WINDOW_WIDTH, height: 258 },
         { x: 0, y: 0, width: 2880, height: 1800 },
         2,
       ),
-    ).toEqual({ x: 1968, y: 1380 });
+    ).toEqual({ x: 1872, y: 1284 });
   });
 
   it("reclamps an old 420px right-edge position for the wider roster", () => {
     expect(
       rosterOrigin(
         { x: 2040, y: 80 },
-        { width: ROSTER_WIDTH, height: 210 },
+        { width: WINDOW_WIDTH, height: 258 },
         { x: 0, y: 0, width: 2880, height: 1800 },
         2,
       ),
-    ).toEqual({ x: 1968, y: 80 });
+    ).toEqual({ x: 1872, y: 80 });
   });
 });
 
-it("rounds measured card height plus the root border", () => {
+it("rounds measured content height plus the glass border", () => {
   expect(rosterHeight(207.2)).toBe(210);
 });
 
@@ -90,8 +94,8 @@ describe("fixed widget zoom", () => {
   });
 
   it("scales the roster size to whole logical pixels at the fixed zoom", () => {
-    expect(scaledRosterSize(207.2, 1)).toEqual({ width: 456, height: 210 });
-    expect(scaledRosterSize(207.2, WIDGET_ZOOM)).toEqual({ width: 456, height: 210 });
+    expect(scaledRosterSize(207.2, 1)).toEqual({ width: 504, height: 258 });
+    expect(scaledRosterSize(207.2, WIDGET_ZOOM)).toEqual({ width: 504, height: 258 });
   });
 });
 

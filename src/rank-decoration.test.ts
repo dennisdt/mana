@@ -132,14 +132,32 @@ describe("rank decoration bitmaps", () => {
     }
   });
 
-  it("locks every prestige medallion to the badge contract", () => {
+  it("locks every generated prestige kit to the perimeter contract", () => {
+    const pieces: Record<string, [number, number]> = {
+      "rail-h": [128, 32],
+      "rail-v": [32, 128],
+      "corner-tl": [96, 96],
+      "corner-tr": [96, 96],
+      "corner-bl": [96, 96],
+      "corner-br": [96, 96],
+      "crest-top": [192, 96],
+    };
+
     for (let prestige = 1; prestige <= 10; prestige += 1) {
-      const image = decodeRgba(
-        new URL(`../public/badges/prestige-${prestige}.png`, import.meta.url),
-      );
-      expect([image.width, image.height], String(prestige)).toEqual([96, 96]);
-      expect(edgeAlpha(image), String(prestige)).toBe(0);
-      expect(visiblePixels(image), String(prestige)).toBeGreaterThan(1_000);
+      for (const [piece, dimensions] of Object.entries(pieces)) {
+        const label = `${prestige}/${piece}`;
+        const image = decodeRgba(
+          new URL(
+            `../public/frames/prestige/${prestige}/${piece}.png`,
+            import.meta.url,
+          ),
+        );
+        expect([image.width, image.height], label).toEqual(dimensions);
+        expect(edgeAlpha(image), label).toBe(0);
+        expect(visiblePixels(image), label).toBeGreaterThan(
+          image.width * image.height * 0.02,
+        );
+      }
     }
   });
 });

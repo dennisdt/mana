@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { probeImage, resolveSheet } from "./cosmetics";
+import { resolveSheet } from "./cosmetics";
 import {
   currentMonitor,
   getCurrentWindow,
@@ -11,7 +11,6 @@ import { fmtAge, fmtCountdown, manaLeft, planLabel } from "./format";
 import { meterFillPixels } from "./meter";
 import {
   actionKind,
-  badgeSlots,
   dialogCopy,
   levelLabel,
   nextTier,
@@ -24,6 +23,10 @@ import {
   spritePhaseCycles,
 } from "./sprite-animation";
 import { cardHtml, providerIsVisible, type Snapshot } from "./view";
+import {
+  createFrameDecorationUpdater,
+  frameLayerHtml,
+} from "./frame-renderer";
 import {
   createSerialQueue,
   rosterOrigin,
@@ -40,6 +43,9 @@ let hovering = false;
 let moving = false;
 const spriteMotionPreference = window.matchMedia("(prefers-reduced-motion: reduce)");
 let spriteFrameTimer: ReturnType<typeof setTimeout> | undefined;
+const perimeter = document.getElementById("perimeter")!;
+perimeter.innerHTML = frameLayerHtml();
+const updateFrameDecoration = createFrameDecorationUpdater(perimeter);
 
 function spriteState(provider: string): string {
   if (moving || hovering) return "hover";
@@ -196,12 +202,6 @@ function updateRankSheets(tier: string): void {
   }
 }
 
-function badgeHtml(n: number, prestige: number): string {
-  // Beyond ten prestiges the tenth badge carries the total as an overlay.
-  const count = n === 10 && prestige > 10 ? ` data-count="${prestige}"` : "";
-  return `<span class="badge" data-n="${n}"${count} aria-hidden="true"></span>`;
-}
-
 let progress: Progress | undefined;
 
 function renderProgress(p: Progress): void {
@@ -212,24 +212,11 @@ function renderProgress(p: Progress): void {
   action.hidden = kind === null;
   if (kind) action.textContent = dialogCopy(kind, p).confirm;
   const footer = document.getElementById("progress")!;
-  const badges = footer.querySelector<HTMLElement>(".badges")!;
-  const key = String(p.prestige);
-  if (badges.dataset.key !== key) {
-    badges.dataset.key = key;
-    badges.innerHTML = badgeSlots(p.prestige)
-      .map((n) => badgeHtml(n, p.prestige))
-      .join("");
-    badges.querySelectorAll<HTMLElement>(".badge").forEach((badge) => {
-      // Missing badge art reveals the CSS star fallback instead of a gap.
-      void probeImage(`/badges/prestige-${badge.dataset.n}.png`).then((exists) => {
-        if (!exists) badge.dataset.fallback = "true";
-      });
-    });
-  }
   footer.querySelector<HTMLElement>(".level")!.textContent = levelLabel(p);
   footer.querySelector<HTMLElement>(".xpfill")!.style.width =
     `${xpBarFraction(p) * 100}%`;
   updateRankSheets(p.tier);
+  void updateFrameDecoration(p.tier, p.prestige);
   resizeRosterContent();
 }
 

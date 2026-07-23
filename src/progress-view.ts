@@ -26,14 +26,6 @@ export function xpBarFraction(p: Progress): number {
   return Math.min(1, Math.max(0, current / needed));
 }
 
-/**
- * @deprecated Temporary Task 3 compatibility for main.ts. Task 4 must delete
- * the stacked badge renderer and this export together.
- */
-export function badgeSlots(prestige: number): number[] {
-  return Array.from({ length: Math.min(prestige, 10) }, (_, i) => i + 1);
-}
-
 export function actionKind(p: Progress): "rank-up" | "prestige" | null {
   if (p.prestige_eligible) return "prestige";
   if (p.rank_up_eligible) return "rank-up";

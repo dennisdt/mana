@@ -15,8 +15,8 @@
       {
         "label": "main",
         "title": "Mana",
-        "width": 456,
-        "height": 175,
+        "width": 504,
+        "height": 223,
         "transparent": true,
         "decorations": false,
         "shadow": false,
