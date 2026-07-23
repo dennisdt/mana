@@ -7,13 +7,19 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 from PIL import Image, ImageDraw
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from normalize_frame_art import PIECE_SPECS, normalize_piece, split_frame_kit
+from normalize_frame_art import (
+    PIECE_SPECS,
+    main,
+    normalize_piece,
+    split_frame_kit,
+)
 
 
 PIECE_NAMES = tuple(PIECE_SPECS)
@@ -55,6 +61,21 @@ def make_fixture_kit(*, empty: set[str] | None = None) -> Image.Image:
     return image
 
 
+def make_asymmetric_piece() -> Image.Image:
+    image = Image.new("RGBA", (30, 30), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    draw.polygon(((5, 9), (13, 9), (10, 11), (13, 13), (5, 13)), fill=(20, 40, 60, 255))
+    return image
+
+
+def directory_bytes(directory: Path) -> dict[str, bytes]:
+    return {
+        path.relative_to(directory).as_posix(): path.read_bytes()
+        for path in sorted(directory.rglob("*"))
+        if path.is_file()
+    }
+
+
 class FrameArtNormalizationTests(unittest.TestCase):
     def test_split_frame_kit_uses_fixed_nine_cell_contract(self) -> None:
         pieces = split_frame_kit(make_fixture_kit())
@@ -72,6 +93,20 @@ class FrameArtNormalizationTests(unittest.TestCase):
             self.assertEqual(result.size, size)
             self.assertEqual(max(edge_alpha(result)), 0)
             self.assertIsNone(result.getchannel("A").crop((0, 0, 4, size[1])).getbbox())
+
+    def test_normalize_piece_preserves_aspect_ratio_and_centers_asymmetric_art(self) -> None:
+        result = normalize_piece(make_asymmetric_piece(), (32, 24))
+        alpha = result.getchannel("A")
+
+        self.assertIsNone(alpha.crop((0, 0, 4, 24)).getbbox())
+        self.assertIsNone(alpha.crop((0, 0, 32, 4)).getbbox())
+        self.assertIsNone(alpha.crop((28, 0, 32, 24)).getbbox())
+        self.assertIsNone(alpha.crop((0, 20, 32, 24)).getbbox())
+        self.assertEqual(alpha.getbbox(), (4, 5, 28, 18))
+        visible_width, visible_height = 24, 13
+        self.assertAlmostEqual(visible_width / visible_height, 9 / 5, delta=0.1)
+        self.assertLessEqual(abs(4 - (32 - 28)), 1)
+        self.assertLessEqual(abs(5 - (24 - 18)), 1)
 
     def test_normalize_piece_removes_alpha_below_threshold(self) -> None:
         source = Image.new("RGBA", (12, 12), (0, 0, 0, 0))
@@ -103,6 +138,65 @@ class FrameArtNormalizationTests(unittest.TestCase):
             with Image.open(written / "rail-h.png") as rail:
                 self.assertEqual(rail.size, PIECE_SPECS["rail-h"])
                 self.assertEqual(max(edge_alpha(rail)), 0)
+
+    def test_cli_successful_publication_removes_stale_optional_pieces(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_directory:
+            root = Path(temp_directory)
+            source = root / "kit.png"
+            output_root = root / "frames"
+            destination = output_root / "ranks" / "emerald"
+            destination.mkdir(parents=True)
+            (destination / "ornament-h.png").write_bytes(b"stale optional piece")
+            make_fixture_kit(empty={"crest-top", "ornament-h", "ornament-v"}).save(source)
+
+            completed = self.run_cli(
+                "--family", "rank", "--name", "emerald", "--input", str(source),
+                "--output-root", str(output_root),
+            )
+
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertFalse((destination / "ornament-h.png").exists())
+            self.assertEqual(
+                {path.stem for path in destination.glob("*.png")}, set(BASE_PIECES)
+            )
+
+    def test_cli_late_save_failure_preserves_previous_complete_destination(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_directory:
+            root = Path(temp_directory)
+            source = root / "kit.png"
+            output_root = root / "frames"
+            destination = output_root / "ranks" / "iron"
+            destination.mkdir(parents=True)
+            (destination / "corner-tl.png").write_bytes(b"previous corner")
+            (destination / "ornament-h.png").write_bytes(b"previous optional")
+            (destination / "previous-only.txt").write_bytes(b"previous complete kit marker")
+            before = directory_bytes(destination)
+            make_fixture_kit(empty={"crest-top", "ornament-h", "ornament-v"}).save(source)
+
+            original_save = Image.Image.save
+
+            def fail_on_late_piece(image: Image.Image, fp: str | Path, *args: object, **kwargs: object) -> None:
+                if Path(fp).name == "rail-h.png":
+                    raise OSError("simulated late save failure")
+                original_save(image, fp, *args, **kwargs)
+
+            with mock.patch.object(Image.Image, "save", new=fail_on_late_piece):
+                with self.assertRaises(SystemExit) as error:
+                    main(
+                        [
+                            "--family", "rank", "--name", "iron", "--input", str(source),
+                            "--output-root", str(output_root),
+                        ]
+                    )
+
+            self.assertEqual(error.exception.code, 2)
+            self.assertEqual(directory_bytes(destination), before)
+            self.assertEqual(
+                {path.name for path in destination.iterdir()}, set(before)
+            )
+            self.assertEqual(
+                list(destination.parent.glob(f".{destination.name}.*")), []
+            )
 
     def test_cli_writes_prestige_to_numeric_directory(self) -> None:
         with tempfile.TemporaryDirectory() as temp_directory:

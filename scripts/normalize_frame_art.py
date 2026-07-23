@@ -4,6 +4,10 @@
 from __future__ import annotations
 
 import argparse
+import os
+import shutil
+import tempfile
+import uuid
 from pathlib import Path
 
 from PIL import Image
@@ -128,6 +132,42 @@ def _target_directory(family: str, name: str, output_root: Path) -> Path:
     return output_root / "prestige" / str(int(name))
 
 
+def _clean_directory(directory: Path) -> None:
+    shutil.rmtree(directory, ignore_errors=True)
+
+
+def _publish_staged_directory(staging: Path, destination: Path) -> None:
+    """Replace a complete destination with staged output, restoring it on failure."""
+    backup = destination.with_name(f".{destination.name}.backup-{uuid.uuid4().hex}")
+    if not destination.exists():
+        try:
+            os.replace(staging, destination)
+        except OSError:
+            _clean_directory(staging)
+            raise
+        return
+
+    try:
+        os.replace(destination, backup)
+    except OSError:
+        _clean_directory(staging)
+        raise
+
+    try:
+        os.replace(staging, destination)
+    except OSError:
+        try:
+            os.replace(backup, destination)
+        except OSError:
+            # Retain the backup for manual recovery when rollback cannot complete.
+            raise
+        finally:
+            _clean_directory(staging)
+        raise
+
+    _clean_directory(backup)
+
+
 def normalize_frame_kit(
     source: Image.Image,
     *,
@@ -151,13 +191,21 @@ def normalize_frame_kit(
     if missing:
         raise ValueError(f"required pieces are empty: {', '.join(missing)}")
 
-    destination.mkdir(parents=True, exist_ok=True)
-    for piece_name in PIECE_SPECS:
-        path = destination / f"{piece_name}.png"
-        if piece_name in empty:
-            path.unlink(missing_ok=True)
-        else:
-            normalized[piece_name].save(path, format="PNG", optimize=True)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    staging = Path(
+        tempfile.mkdtemp(prefix=f".{destination.name}.staging-", dir=destination.parent)
+    )
+    try:
+        for piece_name in PIECE_SPECS:
+            if piece_name not in empty:
+                normalized[piece_name].save(
+                    staging / f"{piece_name}.png", format="PNG", optimize=True
+                )
+    except OSError:
+        _clean_directory(staging)
+        raise
+
+    _publish_staged_directory(staging, destination)
     return destination, tuple(piece_name for piece_name in PIECE_SPECS if piece_name not in empty)
 
 
