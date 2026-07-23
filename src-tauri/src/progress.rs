@@ -1,5 +1,5 @@
-use crate::progress_store::save_state;
 pub use crate::progress_store::ProgressStore;
+use crate::progress_store::{publish_rebuilt_state, save_state};
 
 /// Cosmetic tiers, indexed by rank. Rank 0 is the unadorned starting state;
 /// every later tier only changes cosmetics, never behavior.
@@ -381,6 +381,37 @@ fn scan_progress_dirs(
     }
 }
 
+fn scan_and_commit_progress(
+    current: &mut ProgressState,
+    rebuild_pending: bool,
+    claude_dir: &std::path::Path,
+    codex_dir: &std::path::Path,
+    persist_normal: impl FnOnce(&ProgressState) -> Result<(), String>,
+    persist_rebuild: impl FnOnce(&ProgressState) -> Result<(), String>,
+) -> Result<(Option<Progress>, bool), String> {
+    if rebuild_pending {
+        let mut candidate = ProgressState::default();
+        scan_claude_dir(claude_dir, &mut candidate.tally);
+        scan_codex_dir(codex_dir, &mut candidate.tally);
+        recalculate_from_output_history(&mut candidate);
+        let view = commit_candidate(current, candidate, persist_rebuild)?;
+        return Ok((Some(view), true));
+    }
+
+    let mut candidate = current.clone();
+    scan_progress_dirs(claude_dir, codex_dir, &mut candidate);
+    let event = commit_scanned_candidate(current, candidate, persist_normal)?;
+    Ok((event, false))
+}
+
+fn require_completed_output_rebuild(rebuild_pending: bool) -> Result<(), String> {
+    if rebuild_pending {
+        Err("output history rebuild is still in progress".into())
+    } else {
+        Ok(())
+    }
+}
+
 #[tauri::command]
 pub fn get_progress(store: tauri::State<'_, ProgressStore>) -> Progress {
     progress_view(&store.state.lock().unwrap())
@@ -391,6 +422,7 @@ pub fn rank_up(
     app: tauri::AppHandle,
     store: tauri::State<'_, ProgressStore>,
 ) -> Result<Progress, String> {
+    require_completed_output_rebuild(store.output_rebuild_pending())?;
     let view = {
         let mut current = store
             .state
@@ -413,6 +445,7 @@ pub fn prestige(
     app: tauri::AppHandle,
     store: tauri::State<'_, ProgressStore>,
 ) -> Result<Progress, String> {
+    require_completed_output_rebuild(store.output_rebuild_pending())?;
     let view = {
         let mut current = store
             .state
@@ -431,9 +464,8 @@ pub fn prestige(
 }
 
 /// Rescans the real session directories every 60s. The immediate first tick
-/// banks history only for a genuinely new install. Every tally/cursor delta is
-/// persisted; because lifetime output tokens are rendered, any output increase
-/// changes the public view and can emit a progress update.
+/// rebuilds retained output history for a migrated store, or banks history for
+/// a genuinely new install. Later tally/cursor deltas use ordinary v3 saves.
 pub fn spawn_progress_watcher(app: tauri::AppHandle) {
     tauri::async_runtime::spawn(async move {
         use tauri::Manager as _;
@@ -448,13 +480,27 @@ pub fn spawn_progress_watcher(app: tauri::AppHandle) {
             let event = {
                 let store = app.state::<ProgressStore>();
                 let mut current = store.state.lock().unwrap();
-                let mut candidate = current.clone();
-                scan_progress_dirs(&claude_dir, &codex_dir, &mut candidate);
-                match commit_scanned_candidate(&mut current, candidate, |candidate| {
-                    save_state(&store.paths, candidate)
-                        .map_err(|error| format!("progress persistence failed: {error}"))
-                }) {
-                    Ok(event) => event,
+                let rebuild_pending = store.output_rebuild_pending();
+                match scan_and_commit_progress(
+                    &mut current,
+                    rebuild_pending,
+                    &claude_dir,
+                    &codex_dir,
+                    |candidate| {
+                        save_state(&store.paths, candidate)
+                            .map_err(|error| format!("progress persistence failed: {error}"))
+                    },
+                    |candidate| {
+                        publish_rebuilt_state(&store.paths, candidate)
+                            .map_err(|error| format!("progress persistence failed: {error}"))
+                    },
+                ) {
+                    Ok((event, rebuild_completed)) => {
+                        if rebuild_completed {
+                            store.finish_output_rebuild();
+                        }
+                        event
+                    }
                     Err(error) => {
                         eprintln!("{error}");
                         None
@@ -661,6 +707,15 @@ mod tests {
     }
 
     #[test]
+    fn progression_commands_reject_while_output_rebuild_is_pending() {
+        assert_eq!(
+            require_completed_output_rebuild(true).unwrap_err(),
+            "output history rebuild is still in progress"
+        );
+        assert!(require_completed_output_rebuild(false).is_ok());
+    }
+
+    #[test]
     fn failed_persistence_does_not_commit_candidate() {
         let mut current = state_with(800_000, 0, 0, 0);
         current
@@ -745,6 +800,87 @@ mod tests {
             ),
             manual_progression,
         );
+    }
+
+    #[test]
+    fn pending_rebuild_scans_all_history_and_commits_before_flag_clear() {
+        let claude_dir = tally_test_dir("rebuild-claude");
+        let codex_dir = tally_test_dir("rebuild-codex");
+        let first_cycle = prestige_cycle_token_cost(0);
+        let retained_claude = CLAUDE_LINE.replace(
+            "\"output_tokens\":100",
+            &format!("\"output_tokens\":{first_cycle}"),
+        );
+        write(
+            &claude_dir.join("retained/session.jsonl"),
+            &format!("{retained_claude}\n"),
+        );
+        write(
+            &codex_dir.join("retained/session.jsonl"),
+            &format!("{CODEX_EVENT}\n"),
+        );
+
+        let mut current = ProgressState::default();
+        let rebuild_pending = std::cell::Cell::new(true);
+        let persisted = std::cell::RefCell::new(None);
+        let (event, rebuild_completed) = scan_and_commit_progress(
+            &mut current,
+            rebuild_pending.get(),
+            &claude_dir,
+            &codex_dir,
+            |_| panic!("a rebuild must not use ordinary persistence"),
+            |state| {
+                assert!(rebuild_pending.get());
+                persisted.replace(Some(state.clone()));
+                Ok(())
+            },
+        )
+        .unwrap();
+        if rebuild_completed {
+            rebuild_pending.set(false);
+        }
+
+        assert_eq!(current.tally.output_tokens, first_cycle + 7);
+        assert!(!current.tally.claude_offsets.is_empty());
+        assert!(!current.tally.codex_offsets.is_empty());
+        assert_eq!(current.tally.codex_output_totals.values().next(), Some(&7));
+        assert!(current.initialized);
+        assert_eq!(current.prestige, 1);
+        assert_eq!(current.prestige_token_floor, first_cycle);
+        assert_eq!(persisted.into_inner(), Some(current.clone()));
+        assert_eq!(event, Some(progress_view(&current)));
+        assert!(rebuild_completed);
+        assert!(!rebuild_pending.get());
+    }
+
+    #[test]
+    fn failed_rebuild_persistence_keeps_live_state_and_pending_flag() {
+        let claude_dir = tally_test_dir("failed-rebuild-claude");
+        let codex_dir = tally_test_dir("failed-rebuild-codex");
+        write(
+            &claude_dir.join("retained/session.jsonl"),
+            &format!("{CLAUDE_LINE}\n"),
+        );
+        write(
+            &codex_dir.join("retained/session.jsonl"),
+            &format!("{CODEX_EVENT}\n"),
+        );
+
+        let mut current = state_with(42, 0, 0, 0);
+        let before = current.clone();
+        let rebuild_pending = std::cell::Cell::new(true);
+        let result = scan_and_commit_progress(
+            &mut current,
+            rebuild_pending.get(),
+            &claude_dir,
+            &codex_dir,
+            |_| panic!("a rebuild must not use ordinary persistence"),
+            |_| Err("disk full".into()),
+        );
+
+        assert_eq!(result.unwrap_err(), "disk full");
+        assert_eq!(current, before);
+        assert!(rebuild_pending.get());
     }
 
     #[test]

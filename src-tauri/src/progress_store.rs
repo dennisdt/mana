@@ -1,6 +1,6 @@
 use crate::progress::{ProgressState, TallyState, TIERS};
 use std::io::{Read, Seek, Write};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 pub const SCHEMA_VERSION: u32 = 3;
 pub const PRIMARY_PROGRESS_FILENAME: &str = "progress.json";
@@ -19,6 +19,7 @@ pub struct ProgressPaths {
 pub struct ProgressStore {
     pub(crate) state: std::sync::Mutex<ProgressState>,
     pub(crate) paths: ProgressPaths,
+    output_rebuild_pending: AtomicBool,
 }
 
 impl ProgressStore {
@@ -31,10 +32,23 @@ impl ProgressStore {
             .join(PRIMARY_PROGRESS_FILENAME);
         let paths = ProgressPaths::from_primary(primary);
         let outcome = load_state(&paths)?;
-        Ok(Self {
+        Ok(Self::from_outcome(paths, outcome))
+    }
+
+    fn from_outcome(paths: ProgressPaths, outcome: LoadOutcome) -> Self {
+        Self {
             state: std::sync::Mutex::new(outcome.state),
             paths,
-        })
+            output_rebuild_pending: AtomicBool::new(outcome.needs_output_rebuild),
+        }
+    }
+
+    pub(crate) fn output_rebuild_pending(&self) -> bool {
+        self.output_rebuild_pending.load(Ordering::Acquire)
+    }
+
+    pub(crate) fn finish_output_rebuild(&self) {
+        self.output_rebuild_pending.store(false, Ordering::Release);
     }
 }
 
@@ -58,6 +72,12 @@ pub struct LoadOutcome {
 enum SaveCheckpoint {
     TemporarySynced,
     BackupReplaced,
+    PrimaryReplaced,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RebuildCheckpoint {
+    TemporarySynced,
     PrimaryReplaced,
 }
 
@@ -676,6 +696,219 @@ pub fn save_state(paths: &ProgressPaths, state: &ProgressState) -> std::io::Resu
     save_state_with_hook(paths, state, |_| Ok(()))
 }
 
+fn snapshot_for_source(
+    paths: &ProgressPaths,
+    source: &[u8],
+    source_schema: u32,
+) -> std::io::Result<()> {
+    let (path, expected_schema) = match source_schema {
+        1 => (&paths.pre_migration_v1, SnapshotSchema::V1),
+        2 => (&paths.pre_migration_v2, SnapshotSchema::V2),
+        _ => return Err(invalid_data("unsupported pre-migration schema")),
+    };
+    let snapshot = validate_snapshot(path, expected_schema)?;
+    if snapshot != source {
+        return Err(invalid_data(format!(
+            "pre-migration snapshot does not match source progress: {}",
+            path.display()
+        )));
+    }
+    Ok(())
+}
+
+enum MigrationPublicationStatus {
+    Pending,
+    AlreadyPublished,
+}
+
+fn require_any_migration_snapshot(paths: &ProgressPaths) -> std::io::Result<()> {
+    let mut snapshot_error = None;
+    for (path, schema) in [
+        (&paths.pre_migration_v2, SnapshotSchema::V2),
+        (&paths.pre_migration_v1, SnapshotSchema::V1),
+    ] {
+        match validate_snapshot(path, schema) {
+            Ok(_) => return Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                if snapshot_error.is_none() {
+                    snapshot_error = Some(error);
+                }
+            }
+        }
+    }
+    Err(snapshot_error.unwrap_or_else(|| {
+        invalid_data("output rebuild has no valid pre-migration source snapshot")
+    }))
+}
+
+fn require_matching_migration_snapshot(
+    paths: &ProgressPaths,
+    rebuilt: &ProgressState,
+) -> std::io::Result<MigrationPublicationStatus> {
+    let candidates = [(&paths.primary, true), (&paths.backup, false)];
+    let mut recovery_error = None;
+
+    for (path, is_primary) in candidates {
+        let bytes = match read_candidate(path, false) {
+            Ok(Some(bytes)) => bytes,
+            Ok(None) => continue,
+            Err(CandidateReadError::RegularFile(error)) if is_primary => return Err(error),
+            Err(error) => {
+                if recovery_error.is_none() {
+                    recovery_error = Some(error.into_inner());
+                }
+                continue;
+            }
+        };
+        match decode_state(&bytes) {
+            Ok(DecodedState::NeedsOutputRebuild { source_schema }) => {
+                snapshot_for_source(paths, &bytes, source_schema)?;
+                return Ok(MigrationPublicationStatus::Pending);
+            }
+            Ok(DecodedState::Current(state)) if is_primary && state == *rebuilt => {
+                require_any_migration_snapshot(paths)?;
+                return Ok(MigrationPublicationStatus::AlreadyPublished);
+            }
+            Ok(DecodedState::Current(_)) => {
+                return Err(invalid_data(
+                    "cannot publish a migration rebuild over current progress",
+                ));
+            }
+            Err(error) if is_primary && error.kind() == std::io::ErrorKind::Unsupported => {
+                return Err(error);
+            }
+            Err(error) => {
+                if recovery_error.is_none() {
+                    recovery_error = Some(error);
+                }
+            }
+        }
+    }
+
+    for (path, schema) in [
+        (&paths.pre_migration_v2, SnapshotSchema::V2),
+        (&paths.pre_migration_v1, SnapshotSchema::V1),
+    ] {
+        match validate_snapshot(path, schema) {
+            Ok(_) => return Ok(MigrationPublicationStatus::Pending),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                if recovery_error.is_none() {
+                    recovery_error = Some(error);
+                }
+            }
+        }
+    }
+
+    Err(recovery_error.unwrap_or_else(|| {
+        invalid_data("output rebuild has no valid pre-migration source snapshot")
+    }))
+}
+
+fn rebuilt_primary_is_visible(
+    paths: &ProgressPaths,
+    expected_bytes: &[u8],
+) -> std::io::Result<bool> {
+    let metadata = std::fs::symlink_metadata(&paths.primary)?;
+    if !metadata.file_type().is_file() {
+        return Ok(false);
+    }
+    let bytes = std::fs::read(&paths.primary)?;
+    if bytes != expected_bytes {
+        return Ok(false);
+    }
+    Ok(matches!(decode_state(&bytes)?, DecodedState::Current(_)))
+}
+
+fn committed_or_error(
+    paths: &ProgressPaths,
+    expected_bytes: &[u8],
+    error: std::io::Error,
+) -> std::io::Result<()> {
+    if rebuilt_primary_is_visible(paths, expected_bytes)? {
+        Ok(())
+    } else {
+        Err(error)
+    }
+}
+
+fn publish_rebuilt_state_with_hook(
+    paths: &ProgressPaths,
+    state: &ProgressState,
+    mut hook: impl FnMut(RebuildCheckpoint) -> std::io::Result<()>,
+) -> std::io::Result<()> {
+    if matches!(
+        require_matching_migration_snapshot(paths, state)?,
+        MigrationPublicationStatus::AlreadyPublished
+    ) {
+        return Ok(());
+    }
+    let bytes = encode_state(state)?;
+    let DecodedState::Current(encoded_state) = decode_state(&bytes)? else {
+        return Err(invalid_data("rebuilt progress is not schema v3"));
+    };
+    if encoded_state != *state {
+        return Err(invalid_data(
+            "encoded rebuilt progress differs from requested state",
+        ));
+    }
+
+    std::fs::create_dir_all(parent_directory(&paths.primary))?;
+    let primary_is_valid = primary_contains_valid_state(&paths.primary)?;
+    let mut temporary = open_save_temporary(paths, primary_is_valid)?;
+    let temporary_metadata = temporary.metadata()?;
+    if !temporary_metadata.file_type().is_file() {
+        return Err(invalid_data(format!(
+            "progress temporary is not a regular file: {}",
+            paths.temporary.display()
+        )));
+    }
+    temporary.write_all(&bytes)?;
+    temporary.sync_all()?;
+    temporary.rewind()?;
+    let mut staged_bytes = Vec::new();
+    temporary.read_to_end(&mut staged_bytes)?;
+    if staged_bytes != bytes {
+        return Err(invalid_data(
+            "staged rebuilt progress differs from encoded progress",
+        ));
+    }
+    let DecodedState::Current(staged_state) = decode_state(&staged_bytes)? else {
+        return Err(invalid_data("staged rebuilt progress is not schema v3"));
+    };
+    if staged_state != *state {
+        return Err(invalid_data(
+            "staged rebuilt progress differs from requested state",
+        ));
+    }
+    validate_staged_temporary(&paths.temporary, &temporary_metadata)?;
+    hook(RebuildCheckpoint::TemporarySynced)?;
+
+    validate_staged_temporary(&paths.temporary, &temporary_metadata)?;
+    if matches!(
+        require_matching_migration_snapshot(paths, state)?,
+        MigrationPublicationStatus::AlreadyPublished
+    ) {
+        drop(temporary);
+        let _ = remove_temporary(&paths.temporary);
+        return Ok(());
+    }
+    drop(temporary);
+    std::fs::rename(&paths.temporary, &paths.primary)?;
+    if let Err(error) = hook(RebuildCheckpoint::PrimaryReplaced) {
+        return committed_or_error(paths, &bytes, error);
+    }
+    if let Err(error) = sync_parent_directory(&paths.primary) {
+        return committed_or_error(paths, &bytes, error);
+    }
+    Ok(())
+}
+
+pub fn publish_rebuilt_state(paths: &ProgressPaths, state: &ProgressState) -> std::io::Result<()> {
+    publish_rebuilt_state_with_hook(paths, state, |_| Ok(()))
+}
+
 fn remove_temporary(path: &std::path::Path) -> std::io::Result<()> {
     match std::fs::remove_file(path) {
         Ok(()) => Ok(()),
@@ -853,9 +1086,10 @@ pub fn load_state(paths: &ProgressPaths) -> std::io::Result<LoadOutcome> {
 #[cfg(test)]
 mod tests {
     use super::{
-        decode_state, encode_state, load_state, save_state, save_state_with_hook,
-        validate_external_v1_fixture, DecodedState, ProgressEnvelope, ProgressPaths,
-        RecoverySource, SaveCheckpoint, SCHEMA_VERSION,
+        decode_state, encode_state, load_state, publish_rebuilt_state,
+        publish_rebuilt_state_with_hook, save_state, save_state_with_hook,
+        validate_external_v1_fixture, DecodedState, ProgressEnvelope, ProgressPaths, ProgressStore,
+        RebuildCheckpoint, RecoverySource, SaveCheckpoint, SCHEMA_VERSION,
     };
     use crate::progress::{ProgressState, TallyState};
 
@@ -920,6 +1154,18 @@ mod tests {
         (TestDirectory(dir), paths)
     }
 
+    fn v2_paths(label: &str) -> (TestDirectory, ProgressPaths) {
+        let (directory, paths) = test_paths(label);
+        std::fs::write(
+            &paths.primary,
+            include_bytes!("../tests/fixtures/progress_v2.json"),
+        )
+        .unwrap();
+        let loaded = load_state(&paths).unwrap();
+        assert!(loaded.needs_output_rebuild);
+        (directory, paths)
+    }
+
     fn fixture_state() -> ProgressState {
         output_fixture_state()
     }
@@ -962,6 +1208,185 @@ mod tests {
                 Err(super::invalid_data("progress is not schema v3"))
             }
         }
+    }
+
+    fn load_exact_v3(path: &std::path::Path) -> std::io::Result<ProgressState> {
+        match decode_state(&std::fs::read(path)?)? {
+            DecodedState::Current(state) => Ok(state),
+            DecodedState::NeedsOutputRebuild { .. } => Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "expected schema v3",
+            )),
+        }
+    }
+
+    #[test]
+    fn interrupted_rebuild_staging_keeps_v2_primary_authoritative() {
+        let (_dir, paths) = v2_paths("rebuild-stage-failure");
+        let v2 = std::fs::read(&paths.primary).unwrap();
+        let rebuilt = output_fixture_state();
+
+        publish_rebuilt_state_with_hook(&paths, &rebuilt, |checkpoint| {
+            if checkpoint == RebuildCheckpoint::TemporarySynced {
+                return Err(std::io::Error::other("simulated interruption"));
+            }
+            Ok(())
+        })
+        .unwrap_err();
+
+        assert_eq!(std::fs::read(&paths.primary).unwrap(), v2);
+        assert_eq!(std::fs::read(&paths.pre_migration_v2).unwrap(), v2);
+    }
+
+    #[test]
+    fn successful_rebuild_replaces_v2_with_complete_v3() {
+        let (_dir, paths) = v2_paths("rebuild-success");
+        let rebuilt = output_fixture_state();
+
+        publish_rebuilt_state(&paths, &rebuilt).unwrap();
+
+        assert_eq!(load_exact_v3(&paths.primary).unwrap(), rebuilt);
+        assert!(!paths.backup.exists());
+        assert!(!load_state(&paths).unwrap().needs_output_rebuild);
+    }
+
+    #[test]
+    fn interruption_after_rebuild_rename_is_a_committed_success() {
+        let (_dir, paths) = v2_paths("rebuild-post-rename");
+        let rebuilt = output_fixture_state();
+
+        publish_rebuilt_state_with_hook(&paths, &rebuilt, |checkpoint| {
+            if checkpoint == RebuildCheckpoint::PrimaryReplaced {
+                return Err(std::io::Error::other("simulated directory sync failure"));
+            }
+            Ok(())
+        })
+        .unwrap();
+
+        assert_eq!(load_exact_v3(&paths.primary).unwrap(), rebuilt);
+    }
+
+    #[test]
+    fn rebuild_retries_after_interrupted_staging() {
+        let (_dir, paths) = v2_paths("rebuild-stage-retry");
+        let rebuilt = output_fixture_state();
+        publish_rebuilt_state_with_hook(&paths, &rebuilt, |checkpoint| {
+            if checkpoint == RebuildCheckpoint::TemporarySynced {
+                return Err(std::io::Error::other("simulated interruption"));
+            }
+            Ok(())
+        })
+        .unwrap_err();
+
+        publish_rebuilt_state(&paths, &rebuilt).unwrap();
+
+        assert_eq!(load_exact_v3(&paths.primary).unwrap(), rebuilt);
+        assert!(!paths.temporary.exists());
+    }
+
+    #[test]
+    fn rebuild_does_not_rotate_v2_over_an_existing_backup() {
+        let (_dir, paths) = v2_paths("rebuild-preserves-backup");
+        let backup = encode_state(&state_with_rank(3)).unwrap();
+        std::fs::write(&paths.backup, &backup).unwrap();
+
+        publish_rebuilt_state(&paths, &output_fixture_state()).unwrap();
+
+        assert_eq!(std::fs::read(&paths.backup).unwrap(), backup);
+    }
+
+    #[test]
+    fn rebuild_does_not_replace_future_schema_that_appears_after_staging() {
+        let (_dir, paths) = v2_paths("rebuild-future-primary-race");
+        let rebuilt = output_fixture_state();
+        let mut future = serde_json::to_value(ProgressEnvelope {
+            schema_version: SCHEMA_VERSION,
+            state: state_with_rank(3),
+        })
+        .unwrap();
+        future["schema_version"] = (SCHEMA_VERSION + 1).into();
+        let future = serde_json::to_vec(&future).unwrap();
+
+        let error = publish_rebuilt_state_with_hook(&paths, &rebuilt, |checkpoint| {
+            if checkpoint == RebuildCheckpoint::TemporarySynced {
+                std::fs::write(&paths.primary, &future).unwrap();
+            }
+            Ok(())
+        })
+        .unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::Unsupported);
+        assert_eq!(std::fs::read(&paths.primary).unwrap(), future);
+        assert_eq!(
+            std::fs::read(&paths.pre_migration_v2).unwrap(),
+            include_bytes!("../tests/fixtures/progress_v2.json")
+        );
+    }
+
+    #[test]
+    fn progress_store_retains_and_clears_loaded_rebuild_status() {
+        let (_dir, paths) = v2_paths("store-rebuild-flag");
+        let loaded = load_state(&paths).unwrap();
+        let store = ProgressStore::from_outcome(paths, loaded);
+
+        assert!(store.output_rebuild_pending());
+        store.finish_output_rebuild();
+        assert!(!store.output_rebuild_pending());
+    }
+
+    #[test]
+    fn restarted_v3_store_has_no_pending_rebuild() {
+        let (_dir, paths) = v2_paths("store-v3-restart");
+        publish_rebuilt_state(&paths, &output_fixture_state()).unwrap();
+        let loaded = load_state(&paths).unwrap();
+        let store = ProgressStore::from_outcome(paths, loaded);
+
+        assert!(!store.output_rebuild_pending());
+    }
+
+    #[test]
+    fn rebuild_rejects_snapshot_that_does_not_match_v2_primary() {
+        let (_dir, paths) = test_paths("rebuild-mismatched-v2-snapshot");
+        let snapshot = include_bytes!("../tests/fixtures/progress_v2.json");
+        let mut changed = serde_json::from_slice::<serde_json::Value>(snapshot).unwrap();
+        changed["state"]["rank"] = 3.into();
+        let changed = serde_json::to_vec(&changed).unwrap();
+        std::fs::write(&paths.pre_migration_v2, snapshot).unwrap();
+        std::fs::write(&paths.primary, &changed).unwrap();
+        assert!(load_state(&paths).unwrap().needs_output_rebuild);
+
+        let error = publish_rebuilt_state(&paths, &output_fixture_state()).unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+        assert_eq!(std::fs::read(&paths.primary).unwrap(), changed);
+        assert_eq!(std::fs::read(&paths.pre_migration_v2).unwrap(), snapshot);
+    }
+
+    #[test]
+    fn successful_legacy_rebuild_uses_v1_snapshot() {
+        let (_dir, paths) = test_paths("rebuild-v1-success");
+        let legacy = include_bytes!("../tests/fixtures/progress_v1.json");
+        std::fs::write(&paths.primary, legacy).unwrap();
+        assert!(load_state(&paths).unwrap().needs_output_rebuild);
+        let rebuilt = output_fixture_state();
+
+        publish_rebuilt_state(&paths, &rebuilt).unwrap();
+
+        assert_eq!(load_exact_v3(&paths.primary).unwrap(), rebuilt);
+        assert_eq!(std::fs::read(&paths.pre_migration_v1).unwrap(), legacy);
+    }
+
+    #[test]
+    fn rebuild_publisher_rejects_unrelated_current_v3_without_a_snapshot() {
+        let (_dir, paths) = test_paths("rebuild-current-v3-no-snapshot");
+        let current = encode_state(&output_fixture_state()).unwrap();
+        std::fs::write(&paths.primary, &current).unwrap();
+
+        let error = publish_rebuilt_state(&paths, &output_fixture_state()).unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+        assert_eq!(std::fs::read(&paths.primary).unwrap(), current);
+        assert!(!paths.temporary.exists());
     }
 
     #[test]
