@@ -152,6 +152,27 @@ function visibleBounds(image: DecodedPng): {
   };
 }
 
+function assertCornerBalance(directory: URL): void {
+  const corners = ["corner-tl", "corner-tr", "corner-bl", "corner-br"] as const;
+  const images = corners.map((piece) => decodeRgba(new URL(`${piece}.png`, directory)));
+  const pixelCounts = images.map(visiblePixels);
+  const bounds = images.map(visibleBounds);
+  const dimensions = [
+    ["visible pixels", pixelCounts],
+    ["visible width", bounds.map(({ width }) => width)],
+    ["visible height", bounds.map(({ height }) => height)],
+  ] as const;
+
+  for (const [label, values] of dimensions) {
+    const minimum = Math.min(...values);
+    const maximum = Math.max(...values);
+    expect(
+      maximum / minimum,
+      `${directory.pathname}corner ${label} balance`,
+    ).toBeLessThanOrEqual(1.15);
+  }
+}
+
 function assertKit(directory: URL, expectedPieces: readonly PieceName[]): void {
   const filenames = readdirSync(directory)
     .filter((name: string) => name.endsWith(".png"))
@@ -177,6 +198,8 @@ function assertKit(directory: URL, expectedPieces: readonly PieceName[]): void {
       ).toBeGreaterThanOrEqual(image.height * 0.65);
     }
   }
+
+  assertCornerBalance(directory);
 }
 
 describe("generated frame assets", () => {
