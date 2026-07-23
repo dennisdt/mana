@@ -1258,4 +1258,19 @@ mod tests {
         let error = decode_state(&bytes).unwrap_err();
         assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
     }
+
+    #[test]
+    #[ignore = "requires MANA_PROGRESS_V1_FIXTURE"]
+    fn external_v1_fixture_preserves_all_progress_invariants() {
+        let source = std::path::PathBuf::from(
+            std::env::var_os("MANA_PROGRESS_V1_FIXTURE").expect("fixture path"),
+        );
+        let bytes = std::fs::read(source).unwrap();
+        let (before, _) = decode_state(&bytes).unwrap();
+        let (_dir, paths) = test_paths("external-migration");
+        std::fs::write(&paths.primary, bytes).unwrap();
+        let after = load_state(&paths).unwrap().state;
+        assert_eq!(after, before);
+        assert!(paths.pre_migration.exists());
+    }
 }

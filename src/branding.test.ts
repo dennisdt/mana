@@ -13,6 +13,7 @@ const cargoLock = readFileSync(new URL("src-tauri/Cargo.lock", root), "utf8");
 const html = readFileSync(new URL("index.html", root), "utf8");
 const readme = readFileSync(new URL("README.md", root), "utf8");
 const tauriSource = readFileSync(new URL("src-tauri/src/lib.rs", root), "utf8");
+const progressStoreSource = readFileSync(new URL("src-tauri/src/progress_store.rs", root), "utf8");
 const iconUrl = new URL("src-tauri/icons/mana-potion-master.png", root);
 const infoPlistUrl = new URL("src-tauri/Info.plist", root);
 
@@ -21,6 +22,8 @@ describe("Mana product identity", () => {
     expect(packageJson.name).toBe("mana");
     expect(tauriConfig.productName).toBe("Mana");
     expect(tauriConfig.identifier).toBe("com.vantasoft.mana");
+    expect(progressStoreSource).toContain('dir.join("progress.json")');
+    expect(progressStoreSource).toContain('dir.join("progress.json.bak")');
     expect(tauriConfig.app.windows[0].title).toBe("Mana");
     expect(cargoToml).toMatch(/^name = "mana"$/m);
     expect(html).toContain("<title>Mana</title>");
