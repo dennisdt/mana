@@ -299,9 +299,10 @@ pub fn try_rank_up(state: &mut ProgressState) -> Result<(), String> {
     Ok(())
 }
 
-/// One-time reset after the first full scan: pre-existing token history is
-/// banked as the XP floor and any progression derived from it is revoked.
-/// Levels are meant to be earned from live usage, not imported.
+/// One-time initialization after a genuinely new install's first full scan.
+/// Pre-existing output history is banked as the XP floor, so levels are earned
+/// from live usage rather than imported. Saved and legacy progress is already
+/// initialized and must never take this path.
 pub fn initialize_baseline(state: &mut ProgressState) {
     state.rank = 0;
     state.prestige = 0;
@@ -346,6 +347,9 @@ where
     Ok(view)
 }
 
+/// Commits a scan only when state changed. A tally increment changes the
+/// rendered lifetime output total even below an XP threshold, so it returns a
+/// view for the watcher to emit in that case.
 fn commit_scanned_candidate<F>(
     current: &mut ProgressState,
     candidate: ProgressState,
@@ -360,6 +364,21 @@ where
     let previous_view = progress_view(current);
     let view = commit_candidate(current, candidate, persist)?;
     Ok((view != previous_view).then_some(view))
+}
+
+/// Scans session output incrementally. Only an uninitialized state from a
+/// genuinely new install banks existing history; established rank, prestige,
+/// and floor choices remain manual progression state.
+fn scan_progress_dirs(
+    claude_dir: &std::path::Path,
+    codex_dir: &std::path::Path,
+    state: &mut ProgressState,
+) {
+    scan_claude_dir(claude_dir, &mut state.tally);
+    scan_codex_dir(codex_dir, &mut state.tally);
+    if !state.initialized {
+        initialize_baseline(state);
+    }
 }
 
 #[tauri::command]
@@ -411,9 +430,10 @@ pub fn prestige(
     Ok(view)
 }
 
-/// Rescans the real session directories every 60s (first tick immediate, so
-/// history reconciles at startup). Every tally/cursor delta is persisted,
-/// while sub-XP token growth remains silent because only visible changes emit.
+/// Rescans the real session directories every 60s. The immediate first tick
+/// banks history only for a genuinely new install. Every tally/cursor delta is
+/// persisted; because lifetime output tokens are rendered, any output increase
+/// changes the public view and can emit a progress update.
 pub fn spawn_progress_watcher(app: tauri::AppHandle) {
     tauri::async_runtime::spawn(async move {
         use tauri::Manager as _;
@@ -429,9 +449,7 @@ pub fn spawn_progress_watcher(app: tauri::AppHandle) {
                 let store = app.state::<ProgressStore>();
                 let mut current = store.state.lock().unwrap();
                 let mut candidate = current.clone();
-                scan_claude_dir(&claude_dir, &mut candidate.tally);
-                scan_codex_dir(&codex_dir, &mut candidate.tally);
-                recalculate_from_output_history(&mut candidate);
+                scan_progress_dirs(&claude_dir, &codex_dir, &mut candidate);
                 match commit_scanned_candidate(&mut current, candidate, |candidate| {
                     save_state(&store.paths, candidate)
                         .map_err(|error| format!("progress persistence failed: {error}"))
@@ -692,6 +710,38 @@ mod tests {
         assert_eq!(persisted.into_inner(), Some(candidate.clone()));
         assert_eq!(current, candidate);
         assert_eq!(event, Some(progress_view(&candidate)));
+    }
+
+    #[test]
+    fn ordinary_scan_candidate_preserves_initialized_manual_progression() {
+        let claude_dir = tally_test_dir("manual-progression-claude");
+        let codex_dir = tally_test_dir("manual-progression-codex");
+        write(
+            &claude_dir.join("session.jsonl"),
+            &format!("{CLAUDE_LINE}\n"),
+        );
+
+        let first = prestige_cycle_token_cost(0);
+        let second = prestige_cycle_token_cost(1);
+        let third = prestige_cycle_token_cost(2);
+        let mut candidate = state_with(first + second + third, 4, 1, first);
+        let manual_progression = (
+            candidate.rank,
+            candidate.prestige,
+            candidate.prestige_token_floor,
+        );
+
+        scan_progress_dirs(&claude_dir, &codex_dir, &mut candidate);
+
+        assert_eq!(candidate.tally.total_tokens, first + second + third + 100);
+        assert_eq!(
+            (
+                candidate.rank,
+                candidate.prestige,
+                candidate.prestige_token_floor,
+            ),
+            manual_progression,
+        );
     }
 
     #[test]
