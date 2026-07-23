@@ -13,6 +13,7 @@ import {
   actionKind,
   dialogCopy,
   levelLabel,
+  lifetimeOutputLabel,
   nextTier,
   xpBarFraction,
   type Progress,
@@ -301,6 +302,8 @@ function renderProgress(p: Progress): void {
   if (kind) action.textContent = dialogCopy(kind, p).confirm;
   const footer = document.getElementById("progress")!;
   footer.querySelector<HTMLElement>(".level")!.textContent = levelLabel(p);
+  footer.querySelector<HTMLElement>(".lifetime-output")!.textContent =
+    lifetimeOutputLabel(p.lifetime_output_tokens);
   footer.querySelector<HTMLElement>(".xpfill")!.style.width =
     `${xpBarFraction(p) * 100}%`;
   updateRankSheets(p.tier);
@@ -352,10 +355,12 @@ function resizeRosterContent(): void {
 
 document.body.addEventListener("mouseenter", () => {
   hovering = true;
+  document.getElementById("root")!.dataset.hovering = "true";
   updateSprites();
 });
 document.body.addEventListener("mouseleave", () => {
   hovering = false;
+  document.getElementById("root")!.dataset.hovering = "false";
   updateSprites();
 });
 

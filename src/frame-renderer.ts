@@ -19,6 +19,7 @@ const ORNAMENT_COUNTS: Record<FrameSide, number> = {
 type FrameRenderPlan = {
   cssVariables: Record<string, string>;
   ornamentCounts: Record<FrameSide, number>;
+  /** @deprecated Compatibility metadata; it is never rendered. */
   prestigeText: string;
 };
 
@@ -57,7 +58,7 @@ export function frameLayerHtml(): string {
       `<span class="frame-ornaments frame-ornaments--${side}" data-frame-ornaments="${side}"></span>`,
   ).join("");
 
-  return `${rails}${corners}${ornaments}<span class="frame-crest" data-frame-crest><span class="frame-prestige-text" data-prestige-text></span></span>`;
+  return `${rails}${corners}${ornaments}<span class="frame-crest" data-frame-crest></span>`;
 }
 
 export function frameRenderPlan(
@@ -88,8 +89,9 @@ export function frameRenderPlan(
     );
   }
 
-  cssVariables["--frame-crest"] = cssUrl(
-    model.prestige?.crestTop ?? model.rank?.crestTop,
+  cssVariables["--frame-crest"] = cssUrl(model.rank?.crestTop);
+  cssVariables["--progress-prestige-crest"] = cssUrl(
+    model.prestige?.crestTop,
   );
 
   return {
@@ -112,8 +114,15 @@ export function applyFrameDecoration(
   perimeter.dataset.rank = model.resolvedTier;
   perimeter.dataset.prestige = prestigeLevel(model);
   if (perimeter.parentElement) {
+    perimeter.parentElement.style.setProperty(
+      "--progress-prestige-crest",
+      plan.cssVariables["--progress-prestige-crest"],
+    );
     perimeter.parentElement.dataset.frameArt = String(
       model.rank !== null || model.prestige !== null,
+    );
+    perimeter.parentElement.dataset.prestigeCrest = String(
+      model.prestige !== null,
     );
   }
 
@@ -127,10 +136,6 @@ export function applyFrameDecoration(
         plan.ornamentCounts[side],
       );
   }
-
-  const prestigeText =
-    perimeter.querySelector<HTMLElement>("[data-prestige-text]");
-  if (prestigeText) prestigeText.textContent = plan.prestigeText;
 }
 
 export function createFrameDecorationUpdater(

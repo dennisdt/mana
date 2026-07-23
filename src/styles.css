@@ -140,8 +140,46 @@ body {
 }
 
 #progress .level {
-  flex: none;
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+#progress .prestige-crest {
+  display: none;
+  flex: 0 0 40px;
+  width: 40px;
+  height: 20px;
+  background: var(--progress-prestige-crest, none) center / 40px 20px no-repeat;
+  image-rendering: pixelated;
+}
+
+#root[data-prestige-crest="true"] #progress .prestige-crest {
+  display: block;
+}
+
+#progress .progress-copy {
+  flex: 0 1 228px;
+  width: 228px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+#progress .lifetime-output {
+  display: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#root[data-hovering="true"] #progress .level {
+  display: none;
+}
+
+#root[data-hovering="true"] #progress .lifetime-output {
+  display: block;
 }
 
 #progress .xpbar {
@@ -943,49 +981,6 @@ body {
   background-size: 96px 48px;
   image-rendering: pixelated;
   transform: translateX(-50%);
-}
-
-.frame-prestige-text {
-  position: absolute;
-  top: 26px;
-  left: 50%;
-  display: grid;
-  min-width: 22px;
-  height: 14px;
-  box-sizing: border-box;
-  place-items: center;
-  padding: 0 4px;
-  color: #fff8df;
-  border: 1px solid #f2cb68;
-  background: #160d2a;
-  box-shadow:
-    0 0 0 1px #3a205b,
-    inset 0 1px rgba(255, 248, 223, 0.28);
-  clip-path: polygon(
-    3px 0,
-    calc(100% - 3px) 0,
-    100% 3px,
-    100% calc(100% - 3px),
-    calc(100% - 3px) 100%,
-    3px 100%,
-    0 calc(100% - 3px),
-    0 3px
-  );
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 9px;
-  font-weight: 800;
-  line-height: 12px;
-  letter-spacing: 0;
-  text-shadow:
-    1px 0 #08030d,
-    -1px 0 #08030d,
-    0 1px #08030d,
-    0 -1px #08030d;
-  transform: translateX(-50%);
-}
-
-.frame-prestige-text:empty {
-  display: none;
 }
 
 .frame-rail::after,

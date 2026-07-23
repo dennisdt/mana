@@ -34,6 +34,7 @@ export type ResolvedFrameDecoration = {
   resolvedTier: RankTier;
   rank: FramePieceSet | null;
   prestige: FramePieceSet | null;
+  /** @deprecated Compatibility metadata; prestige identity renders from crestTop. */
   prestigeText: string;
   diagnostics: string[];
 };
@@ -167,11 +168,7 @@ async function completeKit(paths: readonly string[], probe: Probe): Promise<bool
   return results.every(Boolean);
 }
 
-function withoutCrest(frame: FramePieceSet): FramePieceSet {
-  const { crestTop: _crestTop, ...rest } = frame;
-  return rest;
-}
-
+/** @deprecated Compatibility formatter; prestige UI uses the generated crest. */
 export function prestigeLabel(prestige: number): string {
   const normalized = normalizePrestige(prestige);
   if (normalized === 0) return "";
@@ -208,10 +205,6 @@ export async function resolveFrameDecoration(
       break;
     }
     diagnostics.push(`Prestige frame "${level}" is incomplete.`);
-  }
-
-  if (resolvedPrestige && rank) {
-    rank = withoutCrest(rank);
   }
 
   return {
