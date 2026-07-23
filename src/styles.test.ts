@@ -242,6 +242,24 @@ describe("generated application perimeter", () => {
     expect(perimeterStyles).not.toMatch(/background-size:\s*100%\s+100%/);
   });
 
+  it("underlaps rails beneath transparent corner padding", () => {
+    const horizontal =
+      styles.match(
+        /\.frame-rail--top,\s*\.frame-rail--bottom\s*\{([^}]*)\}/s,
+      )?.[1] ?? "";
+    const vertical =
+      styles.match(
+        /\.frame-rail--right,\s*\.frame-rail--left\s*\{([^}]*)\}/s,
+      )?.[1] ?? "";
+    const corner = styles.match(/\.frame-corner\s*\{([^}]*)\}/s)?.[1] ?? "";
+
+    expect(horizontal).toMatch(/right:\s*44px/);
+    expect(horizontal).toMatch(/left:\s*44px/);
+    expect(vertical).toMatch(/top:\s*44px/);
+    expect(vertical).toMatch(/bottom:\s*44px/);
+    expect(corner).toMatch(/z-index:\s*1/);
+  });
+
   it("evenly spaces one ornament lane per side", () => {
     expect(styles).toMatch(
       /\.frame-ornaments--top,[^}]*\.frame-ornaments--bottom\s*\{[^}]*display:\s*grid[^}]*grid-auto-flow:\s*column[^}]*justify-content:\s*space-evenly/s,
