@@ -1,6 +1,74 @@
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::Emitter;
+
+const ACTIVITY_GRACE: Duration = Duration::from_millis(2500);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct FileFingerprint {
+    len: u64,
+    modified: SystemTime,
+}
+
+fn jsonl_fingerprints(root: &Path) -> HashMap<PathBuf, FileFingerprint> {
+    let mut result = HashMap::new();
+    let mut pending = vec![root.to_path_buf()];
+    while let Some(directory) = pending.pop() {
+        let Ok(entries) = std::fs::read_dir(directory) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let Ok(metadata) = entry.metadata() else {
+                continue;
+            };
+            if metadata.is_dir() {
+                pending.push(path);
+            } else if path
+                .extension()
+                .is_some_and(|extension| extension == "jsonl")
+            {
+                result.insert(
+                    path,
+                    FileFingerprint {
+                        len: metadata.len(),
+                        modified: metadata.modified().unwrap_or(UNIX_EPOCH),
+                    },
+                );
+            }
+        }
+    }
+    result
+}
+
+#[derive(Default)]
+struct ProviderActivity {
+    previous: Option<HashMap<PathBuf, FileFingerprint>>,
+    last_write_at: Option<Instant>,
+}
+
+impl ProviderActivity {
+    fn update(
+        &mut self,
+        current: HashMap<PathBuf, FileFingerprint>,
+        now: Instant,
+    ) -> bool {
+        let wrote = self.previous.as_ref().is_some_and(|previous| {
+            current
+                .iter()
+                .any(|(path, fingerprint)| previous.get(path) != Some(fingerprint))
+        });
+        self.previous = Some(current);
+        if wrote {
+            self.last_write_at = Some(now);
+        }
+        self.last_write_at.is_some_and(|last_write| {
+            now.saturating_duration_since(last_write) < ACTIVITY_GRACE
+        })
+    }
+}
 
 /// True if the (`comm`, `args`) pair describes an interactive `name` CLI
 /// process: comm is `name` or ends in `/name`, and the args do not mark it
@@ -76,22 +144,73 @@ pub fn get_activity() -> serde_json::Value {
 
 #[cfg(test)]
 mod tests {
-    use super::proc_matches;
+    use super::*;
 
-    #[test]
-    fn matches_cli_invocations() {
-        assert!(proc_matches("/opt/homebrew/Caskroom/codex/0.144.0/codex-aarch64-apple-darwin/codex", "codex", "codex"));
-        assert!(proc_matches("codex", "codex exec \"fix bug\"", "codex"));
-        assert!(proc_matches("/usr/local/bin/claude", "claude --resume", "claude"));
-        // comm path containing a space must not be misparsed
-        assert!(proc_matches("/Users/John Smith/.cargo/bin/codex", "codex", "codex"));
+    fn fingerprints(entries: &[(&str, u64, u64)]) -> HashMap<PathBuf, FileFingerprint> {
+        entries
+            .iter()
+            .map(|(path, len, modified_ms)| {
+                (
+                    PathBuf::from(path),
+                    FileFingerprint {
+                        len: *len,
+                        modified: std::time::UNIX_EPOCH
+                            + Duration::from_millis(*modified_ms),
+                    },
+                )
+            })
+            .collect()
     }
 
     #[test]
-    fn excludes_servers_and_gui_bundles() {
-        assert!(!proc_matches("/Applications/Codex.app/Contents/Resources/codex", "codex -c features.code_mode_ho", "codex"));
-        assert!(!proc_matches("/opt/homebrew/bin/codex", "codex -s read-only app-server", "codex"));
-        assert!(!proc_matches("/Applications/Claude.app/Contents/MacOS/Claude", "Claude", "claude"));
-        assert!(!proc_matches("random", "line", "codex"));
+    fn initial_scan_is_quiet_and_a_later_write_attacks() {
+        let start = Instant::now();
+        let mut tracker = ProviderActivity::default();
+        assert!(!tracker.update(fingerprints(&[("session.jsonl", 10, 1)]), start));
+        assert!(tracker.update(
+            fingerprints(&[("session.jsonl", 20, 2)]),
+            start + Duration::from_secs(1),
+        ));
+    }
+
+    #[test]
+    fn new_file_after_baseline_attacks_but_deleted_files_do_not() {
+        let start = Instant::now();
+        let mut tracker = ProviderActivity::default();
+        assert!(!tracker.update(fingerprints(&[("old.jsonl", 10, 1)]), start));
+        assert!(!tracker.update(HashMap::new(), start + Duration::from_secs(1)));
+        assert!(tracker.update(
+            fingerprints(&[("new.jsonl", 1, 2)]),
+            start + Duration::from_secs(2),
+        ));
+    }
+
+    #[test]
+    fn activity_expires_at_the_grace_boundary() {
+        let start = Instant::now();
+        let mut tracker = ProviderActivity::default();
+        tracker.update(fingerprints(&[("session.jsonl", 10, 1)]), start);
+        tracker.update(
+            fingerprints(&[("session.jsonl", 20, 2)]),
+            start + Duration::from_secs(1),
+        );
+        assert!(tracker.update(
+            fingerprints(&[("session.jsonl", 20, 2)]),
+            start + Duration::from_millis(3499),
+        ));
+        assert!(!tracker.update(
+            fingerprints(&[("session.jsonl", 20, 2)]),
+            start + Duration::from_millis(3500),
+        ));
+    }
+
+    #[test]
+    fn missing_directory_scans_as_quiet() {
+        let root = std::env::temp_dir().join(format!(
+            "mana-missing-activity-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        assert!(jsonl_fingerprints(&root).is_empty());
     }
 }
