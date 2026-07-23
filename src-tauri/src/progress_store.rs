@@ -3,6 +3,8 @@ use std::io::{Read, Seek, Write};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 pub const SCHEMA_VERSION: u32 = 2;
+pub const PRIMARY_PROGRESS_FILENAME: &str = "progress.json";
+pub const BACKUP_PROGRESS_FILENAME: &str = "progress.json.bak";
 static SNAPSHOT_TEMPORARY_ID: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, PartialEq)]
@@ -25,7 +27,7 @@ impl ProgressStore {
             .path()
             .app_data_dir()
             .map_err(std::io::Error::other)?
-            .join("progress.json");
+            .join(PRIMARY_PROGRESS_FILENAME);
         let paths = ProgressPaths::from_primary(primary);
         let outcome = load_state(&paths)?;
         Ok(Self {
@@ -62,7 +64,7 @@ impl ProgressPaths {
         let dir = parent_directory(&primary).to_path_buf();
         Self {
             primary,
-            backup: dir.join("progress.json.bak"),
+            backup: dir.join(BACKUP_PROGRESS_FILENAME),
             pre_migration: dir.join("progress.pre-migration-v1.json"),
             temporary: dir.join("progress.json.tmp"),
         }
@@ -85,6 +87,61 @@ struct LegacyProgressState {
 
 fn invalid_data(error: impl std::fmt::Display) -> std::io::Error {
     std::io::Error::new(std::io::ErrorKind::InvalidData, error.to_string())
+}
+
+#[cfg(test)]
+fn invalid_input(error: impl std::fmt::Display) -> std::io::Error {
+    std::io::Error::new(std::io::ErrorKind::InvalidInput, error.to_string())
+}
+
+#[cfg(all(test, target_os = "macos"))]
+fn live_primary_path() -> Option<std::path::PathBuf> {
+    std::env::var_os("HOME").map(|home| {
+        std::path::PathBuf::from(home)
+            .join("Library/Application Support")
+            .join("com.vantasoft.mana")
+            .join(PRIMARY_PROGRESS_FILENAME)
+    })
+}
+
+#[cfg(all(test, not(target_os = "macos")))]
+fn live_primary_path() -> Option<std::path::PathBuf> {
+    None
+}
+
+#[cfg(test)]
+fn validate_external_v1_fixture(source: &std::path::Path) -> std::io::Result<std::path::PathBuf> {
+    let metadata = std::fs::symlink_metadata(source)?;
+    if metadata.file_type().is_symlink() || !metadata.file_type().is_file() {
+        return Err(invalid_input(format!(
+            "external progress fixture is not a regular non-symlink file: {}",
+            source.display()
+        )));
+    }
+
+    let file_name = source.file_name().and_then(|name| name.to_str());
+    if file_name == Some(PRIMARY_PROGRESS_FILENAME)
+        || !file_name.is_some_and(|name| {
+            name.strip_prefix("progress.manual-before-v2-")
+                .and_then(|suffix| suffix.strip_suffix(".json"))
+                .is_some()
+        })
+    {
+        return Err(invalid_input(format!(
+            "external progress fixture must be a manual pre-v2 copy: {}",
+            source.display()
+        )));
+    }
+
+    let source = source.canonicalize()?;
+    if let Some(live_primary) = live_primary_path().and_then(|path| path.canonicalize().ok()) {
+        if source == live_primary {
+            return Err(invalid_input(
+                "external progress fixture resolves to the live primary progress file",
+            ));
+        }
+    }
+    Ok(source)
 }
 
 fn parent_directory(path: &std::path::Path) -> &std::path::Path {
@@ -548,8 +605,9 @@ pub fn load_state(paths: &ProgressPaths) -> std::io::Result<LoadOutcome> {
 #[cfg(test)]
 mod tests {
     use super::{
-        decode_state, encode_state, load_state, save_state, save_state_with_hook, ProgressEnvelope,
-        ProgressPaths, RecoverySource, SaveCheckpoint, SCHEMA_VERSION,
+        decode_state, encode_state, load_state, save_state, save_state_with_hook,
+        validate_external_v1_fixture, ProgressEnvelope, ProgressPaths, RecoverySource,
+        SaveCheckpoint, SCHEMA_VERSION,
     };
     use crate::progress::ProgressState;
 
@@ -1260,11 +1318,59 @@ mod tests {
     }
 
     #[test]
+    fn external_fixture_rejects_live_progress_filename() {
+        let (dir, _paths) = test_paths("external-fixture-live-name");
+        let source = dir.0.join("progress.json");
+        std::fs::write(&source, b"fixture").unwrap();
+
+        let error = validate_external_v1_fixture(&source).unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn external_fixture_rejects_symlink() {
+        use std::os::unix::fs::symlink;
+
+        let (dir, _paths) = test_paths("external-fixture-symlink");
+        let target = dir.0.join("progress.manual-before-v2-target.json");
+        let source = dir.0.join("progress.manual-before-v2-link.json");
+        std::fs::write(&target, b"fixture").unwrap();
+        symlink(&target, &source).unwrap();
+
+        let error = validate_external_v1_fixture(&source).unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+    }
+
+    #[test]
+    fn external_fixture_rejects_directory() {
+        let (dir, _paths) = test_paths("external-fixture-directory");
+        let source = dir.0.join("progress.manual-before-v2-directory.json");
+        std::fs::create_dir(&source).unwrap();
+
+        let error = validate_external_v1_fixture(&source).unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+    }
+
+    #[test]
+    fn external_fixture_accepts_regular_manual_copy() {
+        let (dir, _paths) = test_paths("external-fixture-manual-copy");
+        let source = dir.0.join("progress.manual-before-v2-20260722-195941.json");
+        std::fs::write(&source, b"fixture").unwrap();
+
+        validate_external_v1_fixture(&source).unwrap();
+    }
+
+    #[test]
     #[ignore = "requires MANA_PROGRESS_V1_FIXTURE"]
     fn external_v1_fixture_preserves_all_progress_invariants() {
         let source = std::path::PathBuf::from(
             std::env::var_os("MANA_PROGRESS_V1_FIXTURE").expect("fixture path"),
         );
+        let source = validate_external_v1_fixture(&source).unwrap();
         let bytes = std::fs::read(source).unwrap();
         let (before, _) = decode_state(&bytes).unwrap();
         let (_dir, paths) = test_paths("external-migration");

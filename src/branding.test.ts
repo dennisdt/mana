@@ -22,8 +22,16 @@ describe("Mana product identity", () => {
     expect(packageJson.name).toBe("mana");
     expect(tauriConfig.productName).toBe("Mana");
     expect(tauriConfig.identifier).toBe("com.vantasoft.mana");
-    expect(progressStoreSource).toContain('dir.join("progress.json")');
-    expect(progressStoreSource).toContain('dir.join("progress.json.bak")');
+    expect(progressStoreSource).toContain(
+      'pub const PRIMARY_PROGRESS_FILENAME: &str = "progress.json";',
+    );
+    expect(progressStoreSource).toContain(
+      'pub const BACKUP_PROGRESS_FILENAME: &str = "progress.json.bak";',
+    );
+    expect(progressStoreSource).toMatch(
+      /app_data_dir\(\)[\s\S]*?\.join\(PRIMARY_PROGRESS_FILENAME\)/,
+    );
+    expect(progressStoreSource).toContain("dir.join(BACKUP_PROGRESS_FILENAME)");
     expect(tauriConfig.app.windows[0].title).toBe("Mana");
     expect(cargoToml).toMatch(/^name = "mana"$/m);
     expect(html).toContain("<title>Mana</title>");
