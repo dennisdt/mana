@@ -110,7 +110,10 @@ fn live_primary_path() -> Option<std::path::PathBuf> {
 }
 
 #[cfg(test)]
-fn validate_external_v1_fixture(source: &std::path::Path) -> std::io::Result<std::path::PathBuf> {
+fn validate_external_v1_fixture(
+    source: &std::path::Path,
+    live_primary: Option<&std::path::Path>,
+) -> std::io::Result<std::path::PathBuf> {
     let metadata = std::fs::symlink_metadata(source)?;
     if metadata.file_type().is_symlink() || !metadata.file_type().is_file() {
         return Err(invalid_input(format!(
@@ -124,7 +127,7 @@ fn validate_external_v1_fixture(source: &std::path::Path) -> std::io::Result<std
         || !file_name.is_some_and(|name| {
             name.strip_prefix("progress.manual-before-v2-")
                 .and_then(|suffix| suffix.strip_suffix(".json"))
-                .is_some()
+                .is_some_and(|suffix| !suffix.is_empty())
         })
     {
         return Err(invalid_input(format!(
@@ -134,14 +137,29 @@ fn validate_external_v1_fixture(source: &std::path::Path) -> std::io::Result<std
     }
 
     let source = source.canonicalize()?;
-    if let Some(live_primary) = live_primary_path().and_then(|path| path.canonicalize().ok()) {
-        if source == live_primary {
+    let source_metadata = std::fs::metadata(&source)?;
+    if let Some(live_primary) = live_primary.and_then(|path| path.canonicalize().ok()) {
+        let live_primary_metadata = std::fs::metadata(&live_primary)?;
+        if source == live_primary || files_share_identity(&source_metadata, &live_primary_metadata)
+        {
             return Err(invalid_input(
                 "external progress fixture resolves to the live primary progress file",
             ));
         }
     }
     Ok(source)
+}
+
+#[cfg(all(test, unix))]
+fn files_share_identity(source: &std::fs::Metadata, live_primary: &std::fs::Metadata) -> bool {
+    use std::os::unix::fs::MetadataExt;
+
+    source.dev() == live_primary.dev() && source.ino() == live_primary.ino()
+}
+
+#[cfg(all(test, not(unix)))]
+fn files_share_identity(_: &std::fs::Metadata, _: &std::fs::Metadata) -> bool {
+    false
 }
 
 fn parent_directory(path: &std::path::Path) -> &std::path::Path {
@@ -1323,9 +1341,37 @@ mod tests {
         let source = dir.0.join("progress.json");
         std::fs::write(&source, b"fixture").unwrap();
 
-        let error = validate_external_v1_fixture(&source).unwrap_err();
+        let error = validate_external_v1_fixture(&source, None).unwrap_err();
 
         assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+    }
+
+    #[test]
+    fn external_fixture_rejects_wrong_manual_copy_filename_without_reading_it() {
+        let (dir, _paths) = test_paths("external-fixture-wrong-name");
+        let source = dir.0.join("progress.manual-before-v2-.json");
+        std::fs::write(&source, b"fixture content must remain unread").unwrap();
+
+        let error = validate_external_v1_fixture(&source, None).unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+        assert!(source.is_file());
+    }
+
+    #[test]
+    fn external_fixture_rejects_canonical_live_primary_alias_without_reading_it() {
+        let (dir, _paths) = test_paths("external-fixture-canonical-alias");
+        let source = dir.0.join("progress.manual-before-v2-20260722-195941.json");
+        let live_primary = dir
+            .0
+            .join(".")
+            .join("progress.manual-before-v2-20260722-195941.json");
+        std::fs::write(&source, b"fixture content must remain unread").unwrap();
+
+        let error = validate_external_v1_fixture(&source, Some(&live_primary)).unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+        assert!(source.is_file());
     }
 
     #[cfg(unix)]
@@ -1339,7 +1385,7 @@ mod tests {
         std::fs::write(&target, b"fixture").unwrap();
         symlink(&target, &source).unwrap();
 
-        let error = validate_external_v1_fixture(&source).unwrap_err();
+        let error = validate_external_v1_fixture(&source, None).unwrap_err();
 
         assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
     }
@@ -1350,7 +1396,7 @@ mod tests {
         let source = dir.0.join("progress.manual-before-v2-directory.json");
         std::fs::create_dir(&source).unwrap();
 
-        let error = validate_external_v1_fixture(&source).unwrap_err();
+        let error = validate_external_v1_fixture(&source, None).unwrap_err();
 
         assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
     }
@@ -1361,7 +1407,29 @@ mod tests {
         let source = dir.0.join("progress.manual-before-v2-20260722-195941.json");
         std::fs::write(&source, b"fixture").unwrap();
 
-        validate_external_v1_fixture(&source).unwrap();
+        validate_external_v1_fixture(&source, None).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn external_fixture_rejects_live_primary_hard_link_without_reading_it() {
+        use std::os::unix::fs::MetadataExt;
+
+        let (dir, _paths) = test_paths("external-fixture-hard-link");
+        let live_primary = dir.0.join("progress.json");
+        let source = dir.0.join("progress.manual-before-v2-20260722-195941.json");
+        std::fs::write(&live_primary, b"fixture content must remain unread").unwrap();
+        std::fs::hard_link(&live_primary, &source).unwrap();
+
+        let error = validate_external_v1_fixture(&source, Some(&live_primary)).unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+        assert!(live_primary.is_file());
+        assert!(source.is_file());
+        let live_metadata = std::fs::metadata(&live_primary).unwrap();
+        let source_metadata = std::fs::metadata(&source).unwrap();
+        assert_eq!(source_metadata.dev(), live_metadata.dev());
+        assert_eq!(source_metadata.ino(), live_metadata.ino());
     }
 
     #[test]
@@ -1370,7 +1438,8 @@ mod tests {
         let source = std::path::PathBuf::from(
             std::env::var_os("MANA_PROGRESS_V1_FIXTURE").expect("fixture path"),
         );
-        let source = validate_external_v1_fixture(&source).unwrap();
+        let live_primary = super::live_primary_path();
+        let source = validate_external_v1_fixture(&source, live_primary.as_deref()).unwrap();
         let bytes = std::fs::read(source).unwrap();
         let (before, _) = decode_state(&bytes).unwrap();
         let (_dir, paths) = test_paths("external-migration");

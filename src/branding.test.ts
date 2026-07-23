@@ -17,6 +17,59 @@ const progressStoreSource = readFileSync(new URL("src-tauri/src/progress_store.r
 const iconUrl = new URL("src-tauri/icons/mana-potion-master.png", root);
 const infoPlistUrl = new URL("src-tauri/Info.plist", root);
 
+function extractBalancedRustBody(
+  source: string,
+  bodyStart: number,
+  description: string,
+): string {
+  if (bodyStart === -1) {
+    throw new Error(`Rust body not found: ${description}`);
+  }
+
+  let depth = 0;
+  for (let index = bodyStart; index < source.length; index += 1) {
+    if (source[index] === "{") {
+      depth += 1;
+    } else if (source[index] === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        return source.slice(bodyStart + 1, index);
+      }
+    }
+  }
+
+  throw new Error(`Rust body is unbalanced: ${description}`);
+}
+
+function extractRustMethodBody(
+  source: string,
+  typeName: string,
+  functionName: string,
+): string {
+  const implPattern = new RegExp(`\\bimpl\\s+${typeName}\\s*\\{`);
+  const implMatch = implPattern.exec(source);
+  if (!implMatch) {
+    throw new Error(`Rust implementation not found: ${typeName}`);
+  }
+
+  const implBody = extractBalancedRustBody(
+    source,
+    source.indexOf("{", implMatch.index),
+    `impl ${typeName}`,
+  );
+  const functionPattern = new RegExp(`\\bfn\\s+${functionName}\\s*\\(`);
+  const functionMatch = functionPattern.exec(implBody);
+  if (!functionMatch) {
+    throw new Error(`Rust method not found: ${typeName}::${functionName}`);
+  }
+
+  return extractBalancedRustBody(
+    implBody,
+    implBody.indexOf("{", functionMatch.index),
+    `${typeName}::${functionName}`,
+  );
+}
+
 describe("Mana product identity", () => {
   it("uses the visible Mana name while preserving internal identifiers", () => {
     expect(packageJson.name).toBe("mana");
@@ -28,7 +81,7 @@ describe("Mana product identity", () => {
     expect(progressStoreSource).toContain(
       'pub const BACKUP_PROGRESS_FILENAME: &str = "progress.json.bak";',
     );
-    expect(progressStoreSource).toMatch(
+    expect(extractRustMethodBody(progressStoreSource, "ProgressStore", "load")).toMatch(
       /app_data_dir\(\)[\s\S]*?\.join\(PRIMARY_PROGRESS_FILENAME\)/,
     );
     expect(progressStoreSource).toContain("dir.join(BACKUP_PROGRESS_FILENAME)");
