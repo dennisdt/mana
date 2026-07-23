@@ -40,6 +40,7 @@ pub enum RecoverySource {
     Primary,
     Backup,
     PreMigration,
+    Temporary,
     New,
 }
 
@@ -427,6 +428,57 @@ fn remove_temporary(path: &std::path::Path) -> std::io::Result<()> {
     }
 }
 
+fn open_recovery_temporary(path: &std::path::Path) -> std::io::Result<Option<std::fs::File>> {
+    let path_metadata = match std::fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    if !path_metadata.file_type().is_file() {
+        return Err(invalid_data(format!(
+            "progress temporary is not a regular file: {}",
+            path.display()
+        )));
+    }
+
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NOFOLLOW);
+    }
+    let file = options.open(path)?;
+    let opened_metadata = file.metadata()?;
+    validate_staged_temporary(path, &opened_metadata)?;
+    Ok(Some(file))
+}
+
+fn recover_temporary(paths: &ProgressPaths) -> std::io::Result<Option<LoadOutcome>> {
+    let Some(mut temporary) = open_recovery_temporary(&paths.temporary)? else {
+        return Ok(None);
+    };
+    let temporary_metadata = temporary.metadata()?;
+    let mut bytes = Vec::new();
+    temporary.read_to_end(&mut bytes)?;
+    let (state, is_legacy) = decode_state(&bytes)?;
+    if is_legacy {
+        return Err(invalid_data(format!(
+            "progress temporary contains legacy progress: {}",
+            paths.temporary.display()
+        )));
+    }
+
+    validate_staged_temporary(&paths.temporary, &temporary_metadata)?;
+    drop(temporary);
+    std::fs::rename(&paths.temporary, &paths.primary)?;
+    sync_parent_directory(&paths.primary)?;
+    Ok(Some(LoadOutcome {
+        state,
+        source: RecoverySource::Temporary,
+    }))
+}
+
 pub fn load_state(paths: &ProgressPaths) -> std::io::Result<LoadOutcome> {
     let candidates = [
         (&paths.primary, RecoverySource::Primary),
@@ -475,6 +527,12 @@ pub fn load_state(paths: &ProgressPaths) -> std::io::Result<LoadOutcome> {
                 }
             }
         }
+    }
+
+    match recover_temporary(paths) {
+        Ok(Some(outcome)) => return Ok(outcome),
+        Ok(None) => {}
+        Err(error) => return Err(error),
     }
 
     if let Some(error) = recovery_error {
@@ -680,6 +738,112 @@ mod tests {
         assert_eq!(std::fs::read(&paths.temporary).unwrap(), temporary);
         assert!(!paths.primary.exists());
         assert!(!paths.backup.exists());
+    }
+
+    #[test]
+    fn first_save_interrupted_after_temporary_sync_recovers_exact_state() {
+        let (_dir, paths) = test_paths("first-save-temporary-recovery");
+        let expected = state_with_rank(4);
+        let error = save_state_with_hook(&paths, &expected, |checkpoint| {
+            if checkpoint == SaveCheckpoint::TemporarySynced {
+                return Err(std::io::Error::other("simulated interruption"));
+            }
+            Ok(())
+        })
+        .unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::Other);
+        assert!(!paths.primary.exists());
+        assert_eq!(load_exact(&paths.temporary).unwrap(), expected);
+
+        let loaded = load_state(&paths).unwrap();
+
+        assert_eq!(loaded.source, RecoverySource::Temporary);
+        assert_eq!(loaded.state, expected);
+        assert_eq!(load_exact(&paths.primary).unwrap(), expected);
+        assert!(!paths.temporary.exists());
+    }
+
+    #[test]
+    fn malformed_temporary_only_artifact_fails_closed_and_is_preserved() {
+        let (_dir, paths) = test_paths("malformed-temporary-only");
+        let malformed = b"{\"schema_version\":2";
+        std::fs::write(&paths.temporary, malformed).unwrap();
+
+        let error = load_state(&paths).unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+        assert_eq!(std::fs::read(&paths.temporary).unwrap(), malformed);
+        assert!(!paths.primary.exists());
+    }
+
+    #[test]
+    fn legacy_temporary_only_artifact_fails_closed_and_is_preserved() {
+        let (_dir, paths) = test_paths("legacy-temporary-only");
+        let legacy = include_bytes!("../tests/fixtures/progress_v1.json");
+        std::fs::write(&paths.temporary, legacy).unwrap();
+
+        let error = load_state(&paths).unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+        assert_eq!(std::fs::read(&paths.temporary).unwrap(), legacy);
+        assert!(!paths.primary.exists());
+        assert!(!paths.pre_migration.exists());
+    }
+
+    #[test]
+    fn directory_at_temporary_path_fails_closed_and_is_preserved() {
+        let (_dir, paths) = test_paths("directory-temporary-only");
+        std::fs::create_dir(&paths.temporary).unwrap();
+
+        let error = load_state(&paths).unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+        assert!(std::fs::symlink_metadata(&paths.temporary)
+            .unwrap()
+            .file_type()
+            .is_dir());
+        assert!(!paths.primary.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlink_temporary_only_artifact_fails_closed_without_reading_target() {
+        use std::os::unix::fs::symlink;
+
+        let (dir, paths) = test_paths("symlink-temporary-only");
+        let target = dir.0.join("temporary-target.json");
+        let target_bytes = encode_state(&state_with_rank(4)).unwrap();
+        std::fs::write(&target, &target_bytes).unwrap();
+        symlink(&target, &paths.temporary).unwrap();
+
+        let error = load_state(&paths).unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+        assert_eq!(std::fs::read(&target).unwrap(), target_bytes);
+        assert_eq!(std::fs::read_link(&paths.temporary).unwrap(), target);
+        assert!(!paths.primary.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unreadable_temporary_only_artifact_fails_closed_and_is_preserved() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let (_dir, paths) = test_paths("unreadable-temporary-only");
+        let temporary = encode_state(&state_with_rank(4)).unwrap();
+        std::fs::write(&paths.temporary, &temporary).unwrap();
+
+        let error = {
+            let _permissions = RestoredPermissions::new(&paths.temporary);
+            let mut unreadable = std::fs::metadata(&paths.temporary).unwrap().permissions();
+            unreadable.set_mode(0);
+            std::fs::set_permissions(&paths.temporary, unreadable).unwrap();
+            load_state(&paths).unwrap_err()
+        };
+
+        assert_eq!(error.kind(), std::io::ErrorKind::PermissionDenied);
+        assert_eq!(std::fs::read(&paths.temporary).unwrap(), temporary);
+        assert!(!paths.primary.exists());
     }
 
     #[test]
