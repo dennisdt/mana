@@ -6,6 +6,7 @@ pub const SCHEMA_VERSION: u32 = 3;
 pub const PRIMARY_PROGRESS_FILENAME: &str = "progress.json";
 pub const BACKUP_PROGRESS_FILENAME: &str = "progress.json.bak";
 static SNAPSHOT_TEMPORARY_ID: AtomicU64 = AtomicU64::new(0);
+static PUBLICATION_TEMPORARY_ID: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ProgressPaths {
@@ -387,6 +388,14 @@ impl Drop for TemporarySnapshot {
     }
 }
 
+struct PublicationTemporary(std::path::PathBuf);
+
+impl Drop for PublicationTemporary {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
 fn snapshot_matches(decoded: &DecodedState, expected_schema: SnapshotSchema) -> bool {
     matches!(
         (decoded, expected_schema),
@@ -446,6 +455,53 @@ fn create_snapshot_temporary(
             Err(error) => return Err(error),
         }
     }
+}
+
+fn create_publication_temporary(
+    paths: &ProgressPaths,
+) -> std::io::Result<(PublicationTemporary, std::fs::File)> {
+    let parent = parent_directory(&paths.primary);
+    let file_name = paths
+        .temporary
+        .file_name()
+        .unwrap_or_else(|| std::ffi::OsStr::new("progress.json.tmp"));
+
+    loop {
+        let id = PUBLICATION_TEMPORARY_ID.fetch_add(1, Ordering::Relaxed);
+        let mut temporary_name = file_name.to_os_string();
+        temporary_name.push(format!(".publish-{}-{id}", std::process::id()));
+        let temporary_path = parent.join(temporary_name);
+        match std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create_new(true)
+            .open(&temporary_path)
+        {
+            Ok(file) => return Ok((PublicationTemporary(temporary_path), file)),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error),
+        }
+    }
+}
+
+fn acquire_publication_lock(paths: &ProgressPaths) -> std::io::Result<std::fs::File> {
+    let lock_path = parent_directory(&paths.primary).join("progress.json.lock");
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true).write(true).create(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NOFOLLOW);
+    }
+    let lock = options.open(&lock_path)?;
+    if !lock.metadata()?.file_type().is_file() {
+        return Err(invalid_data(format!(
+            "progress publication lock is not a regular file: {}",
+            lock_path.display()
+        )));
+    }
+    lock.lock()?;
+    Ok(lock)
 }
 
 fn sync_parent_directory(path: &std::path::Path) -> std::io::Result<()> {
@@ -658,6 +714,7 @@ fn save_state_with_hook(
 ) -> std::io::Result<()> {
     let bytes = encode_state(state)?;
     std::fs::create_dir_all(parent_directory(&paths.primary))?;
+    let _publication_lock = acquire_publication_lock(paths)?;
     let primary_is_valid = primary_contains_valid_state(&paths.primary)?;
     let mut temporary = open_save_temporary(paths, primary_is_valid)?;
     let temporary_metadata = temporary.metadata()?;
@@ -689,7 +746,8 @@ fn save_state_with_hook(
     drop(temporary);
     std::fs::rename(&paths.temporary, &paths.primary)?;
     hook(SaveCheckpoint::PrimaryReplaced)?;
-    sync_parent_directory(&paths.primary)
+    sync_parent_directory(&paths.primary)?;
+    require_published_primary_visible(paths, &bytes)
 }
 
 pub fn save_state(paths: &ProgressPaths, state: &ProgressState) -> std::io::Result<()> {
@@ -806,7 +864,7 @@ fn require_matching_migration_snapshot(
     }))
 }
 
-fn rebuilt_primary_is_visible(
+fn published_primary_is_visible(
     paths: &ProgressPaths,
     expected_bytes: &[u8],
 ) -> std::io::Result<bool> {
@@ -821,12 +879,25 @@ fn rebuilt_primary_is_visible(
     Ok(matches!(decode_state(&bytes)?, DecodedState::Current(_)))
 }
 
+fn require_published_primary_visible(
+    paths: &ProgressPaths,
+    expected_bytes: &[u8],
+) -> std::io::Result<()> {
+    if published_primary_is_visible(paths, expected_bytes)? {
+        Ok(())
+    } else {
+        Err(invalid_data(
+            "visible progress differs from the published candidate",
+        ))
+    }
+}
+
 fn committed_or_error(
     paths: &ProgressPaths,
     expected_bytes: &[u8],
     error: std::io::Error,
 ) -> std::io::Result<()> {
-    if rebuilt_primary_is_visible(paths, expected_bytes)? {
+    if published_primary_is_visible(paths, expected_bytes)? {
         Ok(())
     } else {
         Err(error)
@@ -838,12 +909,6 @@ fn publish_rebuilt_state_with_hook(
     state: &ProgressState,
     mut hook: impl FnMut(RebuildCheckpoint) -> std::io::Result<()>,
 ) -> std::io::Result<()> {
-    if matches!(
-        require_matching_migration_snapshot(paths, state)?,
-        MigrationPublicationStatus::AlreadyPublished
-    ) {
-        return Ok(());
-    }
     let bytes = encode_state(state)?;
     let DecodedState::Current(encoded_state) = decode_state(&bytes)? else {
         return Err(invalid_data("rebuilt progress is not schema v3"));
@@ -855,13 +920,20 @@ fn publish_rebuilt_state_with_hook(
     }
 
     std::fs::create_dir_all(parent_directory(&paths.primary))?;
-    let primary_is_valid = primary_contains_valid_state(&paths.primary)?;
-    let mut temporary = open_save_temporary(paths, primary_is_valid)?;
+    let _publication_lock = acquire_publication_lock(paths)?;
+    if matches!(
+        require_matching_migration_snapshot(paths, state)?,
+        MigrationPublicationStatus::AlreadyPublished
+    ) {
+        return require_published_primary_visible(paths, &bytes);
+    }
+
+    let (temporary_path, mut temporary) = create_publication_temporary(paths)?;
     let temporary_metadata = temporary.metadata()?;
     if !temporary_metadata.file_type().is_file() {
         return Err(invalid_data(format!(
             "progress temporary is not a regular file: {}",
-            paths.temporary.display()
+            temporary_path.0.display()
         )));
     }
     temporary.write_all(&bytes)?;
@@ -882,27 +954,25 @@ fn publish_rebuilt_state_with_hook(
             "staged rebuilt progress differs from requested state",
         ));
     }
-    validate_staged_temporary(&paths.temporary, &temporary_metadata)?;
+    validate_staged_temporary(&temporary_path.0, &temporary_metadata)?;
     hook(RebuildCheckpoint::TemporarySynced)?;
 
-    validate_staged_temporary(&paths.temporary, &temporary_metadata)?;
+    validate_staged_temporary(&temporary_path.0, &temporary_metadata)?;
     if matches!(
         require_matching_migration_snapshot(paths, state)?,
         MigrationPublicationStatus::AlreadyPublished
     ) {
-        drop(temporary);
-        let _ = remove_temporary(&paths.temporary);
-        return Ok(());
+        return require_published_primary_visible(paths, &bytes);
     }
     drop(temporary);
-    std::fs::rename(&paths.temporary, &paths.primary)?;
+    std::fs::rename(&temporary_path.0, &paths.primary)?;
     if let Err(error) = hook(RebuildCheckpoint::PrimaryReplaced) {
         return committed_or_error(paths, &bytes, error);
     }
     if let Err(error) = sync_parent_directory(&paths.primary) {
         return committed_or_error(paths, &bytes, error);
     }
-    Ok(())
+    require_published_primary_visible(paths, &bytes)
 }
 
 pub fn publish_rebuilt_state(paths: &ProgressPaths, state: &ProgressState) -> std::io::Result<()> {
