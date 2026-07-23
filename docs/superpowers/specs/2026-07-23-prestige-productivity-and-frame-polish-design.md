@@ -68,8 +68,10 @@ The backend progress payload adds:
 lifetime_output_tokens: u64
 ```
 
-This is the only lifetime token value exposed in the progress footer. The UI
-formats it with ASCII thousands separators:
+The Rust field remains a `u64` but serializes across the Tauri boundary as an
+unsigned decimal string, avoiding JavaScript's unsafe-integer range. This is
+the only lifetime token value exposed in the progress footer. The UI validates
+and formats that string with ASCII thousands separators:
 
 ```text
 12,345,678 lifetime output
