@@ -217,6 +217,10 @@ fn invalid_data(error: impl std::fmt::Display) -> std::io::Error {
     std::io::Error::new(std::io::ErrorKind::InvalidData, error.to_string())
 }
 
+fn unsupported_schema(error: impl std::fmt::Display) -> std::io::Error {
+    std::io::Error::new(std::io::ErrorKind::Unsupported, error.to_string())
+}
+
 #[cfg(test)]
 fn invalid_input(error: impl std::fmt::Display) -> std::io::Error {
     std::io::Error::new(std::io::ErrorKind::InvalidInput, error.to_string())
@@ -333,7 +337,7 @@ fn decode_state(bytes: &[u8]) -> std::io::Result<DecodedState> {
                 let envelope = serde_json::from_value::<ProgressEnvelopeV3Wire>(value)
                     .map_err(invalid_data)?;
                 if envelope.schema_version != SCHEMA_VERSION {
-                    return Err(invalid_data("unsupported progress schema version"));
+                    return Err(unsupported_schema("unsupported progress schema version"));
                 }
                 Ok(DecodedState::Current(validate_rank(envelope.state.into())?))
             }
@@ -341,12 +345,12 @@ fn decode_state(bytes: &[u8]) -> std::io::Result<DecodedState> {
                 let envelope = serde_json::from_value::<ProgressEnvelopeV2Wire>(value)
                     .map_err(invalid_data)?;
                 if envelope.schema_version != 2 {
-                    return Err(invalid_data("unsupported progress schema version"));
+                    return Err(unsupported_schema("unsupported progress schema version"));
                 }
                 envelope.state.validate()?;
                 Ok(DecodedState::NeedsOutputRebuild { source_schema: 2 })
             }
-            _ => Err(invalid_data("unsupported progress schema version")),
+            _ => Err(unsupported_schema("unsupported progress schema version")),
         };
     }
 
@@ -817,6 +821,11 @@ pub fn load_state(paths: &ProgressPaths) -> std::io::Result<LoadOutcome> {
                 });
             }
             Err(error) => {
+                if source == RecoverySource::Primary
+                    && error.kind() == std::io::ErrorKind::Unsupported
+                {
+                    return Err(error);
+                }
                 if recovery_error.is_none() {
                     recovery_error = Some(error);
                 }
@@ -1331,6 +1340,104 @@ mod tests {
         assert!(!loaded.needs_output_rebuild);
         assert_eq!(std::fs::read(&paths.backup).unwrap(), backup);
         assert!(!paths.pre_migration_v2.exists());
+    }
+
+    #[test]
+    fn incomplete_v3_primary_uses_valid_v3_backup() {
+        let (_dir, paths) = test_paths("incomplete-v3-valid-v3-backup");
+        let mut damaged = serde_json::to_value(ProgressEnvelope {
+            schema_version: SCHEMA_VERSION,
+            state: output_fixture_state(),
+        })
+        .unwrap();
+        damaged["state"]["tally"]
+            .as_object_mut()
+            .unwrap()
+            .remove("output_tokens");
+        std::fs::write(&paths.primary, serde_json::to_vec(&damaged).unwrap()).unwrap();
+        let backup_state = state_with_rank(7);
+        let backup = encode_state(&backup_state).unwrap();
+        std::fs::write(&paths.backup, &backup).unwrap();
+
+        let loaded = load_state(&paths).unwrap();
+
+        assert_eq!(loaded.source, RecoverySource::Backup);
+        assert_eq!(loaded.state, backup_state);
+        assert!(!loaded.needs_output_rebuild);
+        assert_eq!(std::fs::read(&paths.backup).unwrap(), backup);
+        assert!(!paths.pre_migration_v1.exists());
+        assert!(!paths.pre_migration_v2.exists());
+    }
+
+    #[test]
+    fn future_schema_primary_fails_closed_before_backup_recovery() {
+        let (_dir, paths) = test_paths("future-schema-primary");
+        let mut future = serde_json::to_value(ProgressEnvelope {
+            schema_version: SCHEMA_VERSION,
+            state: output_fixture_state(),
+        })
+        .unwrap();
+        future["schema_version"] = (SCHEMA_VERSION + 1).into();
+        let primary = serde_json::to_vec(&future).unwrap();
+        let backup = encode_state(&state_with_rank(7)).unwrap();
+        let temporary = b"temporary must not be replaced";
+        std::fs::write(&paths.primary, &primary).unwrap();
+        std::fs::write(&paths.backup, &backup).unwrap();
+        std::fs::write(&paths.temporary, temporary).unwrap();
+
+        let error = load_state(&paths).unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::Unsupported);
+        assert_eq!(std::fs::read(&paths.primary).unwrap(), primary);
+        assert_eq!(std::fs::read(&paths.backup).unwrap(), backup);
+        assert_eq!(std::fs::read(&paths.temporary).unwrap(), temporary);
+        assert!(!paths.pre_migration_v1.exists());
+        assert!(!paths.pre_migration_v2.exists());
+    }
+
+    #[test]
+    fn future_schema_primary_fails_closed_before_every_recovery_candidate() {
+        for candidate in [
+            "backup",
+            "pre-migration-v2",
+            "pre-migration-v1",
+            "temporary",
+        ] {
+            let (_dir, paths) = test_paths(&format!("future-schema-{candidate}"));
+            let mut future = serde_json::to_value(ProgressEnvelope {
+                schema_version: SCHEMA_VERSION,
+                state: output_fixture_state(),
+            })
+            .unwrap();
+            future["schema_version"] = (SCHEMA_VERSION + 1).into();
+            let primary = serde_json::to_vec(&future).unwrap();
+            std::fs::write(&paths.primary, &primary).unwrap();
+
+            let (path, bytes) = match candidate {
+                "backup" => (&paths.backup, encode_state(&state_with_rank(7)).unwrap()),
+                "pre-migration-v2" => (
+                    &paths.pre_migration_v2,
+                    include_bytes!("../tests/fixtures/progress_v2.json").to_vec(),
+                ),
+                "pre-migration-v1" => (
+                    &paths.pre_migration_v1,
+                    include_bytes!("../tests/fixtures/progress_v1.json").to_vec(),
+                ),
+                "temporary" => (&paths.temporary, encode_state(&state_with_rank(6)).unwrap()),
+                _ => unreachable!(),
+            };
+            std::fs::write(path, &bytes).unwrap();
+
+            let error = load_state(&paths).unwrap_err();
+
+            assert_eq!(error.kind(), std::io::ErrorKind::Unsupported, "{candidate}");
+            assert_eq!(
+                std::fs::read(&paths.primary).unwrap(),
+                primary,
+                "{candidate}"
+            );
+            assert_eq!(std::fs::read(path).unwrap(), bytes, "{candidate}");
+        }
     }
 
     #[test]
@@ -1881,7 +1988,7 @@ mod tests {
     #[test]
     fn rejects_unknown_future_schema() {
         let error = decode_state(br#"{"schema_version":99,"state":{}}"#).unwrap_err();
-        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+        assert_eq!(error.kind(), std::io::ErrorKind::Unsupported);
     }
 
     #[test]
@@ -1890,7 +1997,7 @@ mod tests {
             br#"{"schema_version":99,"rank":8,"prestige":7,"prestige_token_floor":123456,"initialized":true,"tally":{}}"#,
         )
         .unwrap_err();
-        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+        assert_eq!(error.kind(), std::io::ErrorKind::Unsupported);
     }
 
     #[test]
