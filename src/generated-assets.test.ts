@@ -42,6 +42,18 @@ const RANKS = [
   "emerald", "diamond", "master", "legend", "champion", "godlike",
 ] as const;
 
+const AURA_SPECS = {
+  "claude-aura-low.png": 2,
+  "claude-aura-mid.png": 4,
+  "claude-aura-high.png": 8,
+  "codex-aura-low.png": 2,
+  "codex-aura-mid.png": 4,
+  "codex-aura-high.png": 8,
+} as const;
+
+const AURA_CELL_SIZE = 192;
+const AURA_BASELINE_Y = 184;
+
 type PieceName = keyof typeof PIECE_SPECS;
 
 function uint32(bytes: Uint8Array, offset: number): number {
@@ -149,6 +161,54 @@ function visibleBounds(image: DecodedPng): {
   return {
     width: maxX >= minX ? maxX - minX + 1 : 0,
     height: maxY >= minY ? maxY - minY + 1 : 0,
+  };
+}
+
+function auraCellMetrics(image: DecodedPng, frameIndex: number): {
+  visible: number;
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+  edgeAlpha: number;
+  hash: number;
+} {
+  const cellLeft = frameIndex * AURA_CELL_SIZE;
+  let visible = 0;
+  let left = AURA_CELL_SIZE;
+  let top = AURA_CELL_SIZE;
+  let right = -1;
+  let bottom = -1;
+  let maximumEdgeAlpha = 0;
+  let hash = 2166136261;
+  for (let y = 0; y < AURA_CELL_SIZE; y += 1) {
+    for (let x = 0; x < AURA_CELL_SIZE; x += 1) {
+      const offset = (y * image.width + cellLeft + x) * 4;
+      const alpha = image.pixels[offset + 3];
+      if (alpha > 16) {
+        visible += 1;
+        left = Math.min(left, x);
+        top = Math.min(top, y);
+        right = Math.max(right, x);
+        bottom = Math.max(bottom, y);
+      }
+      if (x === 0 || x === AURA_CELL_SIZE - 1 || y === 0 || y === AURA_CELL_SIZE - 1) {
+        maximumEdgeAlpha = Math.max(maximumEdgeAlpha, alpha);
+      }
+      for (let channel = 0; channel < 4; channel += 1) {
+        hash ^= image.pixels[offset + channel];
+        hash = Math.imul(hash, 16777619) >>> 0;
+      }
+    }
+  }
+  return {
+    visible,
+    left,
+    top,
+    right: right + 1,
+    bottom: bottom + 1,
+    edgeAlpha: maximumEdgeAlpha,
+    hash,
   };
 }
 
@@ -272,6 +332,43 @@ describe("generated frame assets", () => {
         new URL(`../public/frames/prestige/${prestige}/`, import.meta.url),
         prestigePieces,
       );
+    }
+  });
+});
+
+describe("generated elemental aura assets", () => {
+  it("locks the effects directory to six exact RGBA atlases", () => {
+    const directory = new URL("../public/effects/", import.meta.url);
+    expect(readdirSync(directory).sort()).toEqual(Object.keys(AURA_SPECS).sort());
+
+    for (const [filename, frameCount] of Object.entries(AURA_SPECS)) {
+      const image = decodeRgba(new URL(filename, directory));
+      expect([image.width, image.height], filename).toEqual([
+        AURA_CELL_SIZE * frameCount,
+        AURA_CELL_SIZE,
+      ]);
+    }
+  });
+
+  it("keeps every authored frame visible, distinct, centered, and grounded", () => {
+    const directory = new URL("../public/effects/", import.meta.url);
+    for (const [filename, frameCount] of Object.entries(AURA_SPECS)) {
+      const image = decodeRgba(new URL(filename, directory));
+      const hashes = new Set<number>();
+      for (let frameIndex = 0; frameIndex < frameCount; frameIndex += 1) {
+        const metrics = auraCellMetrics(image, frameIndex);
+        const label = `${filename} frame ${frameIndex}`;
+        expect(metrics.visible, `${label} visible coverage`)
+          .toBeGreaterThan(AURA_CELL_SIZE * AURA_CELL_SIZE * 0.005);
+        expect(metrics.edgeAlpha, `${label} transparent edge`).toBe(0);
+        expect(metrics.bottom - 1, `${label} baseline`).toBe(AURA_BASELINE_Y);
+        expect(
+          Math.abs((metrics.left + metrics.right) / 2 - AURA_CELL_SIZE / 2),
+          `${label} center anchor`,
+        ).toBeLessThanOrEqual(0.5);
+        hashes.add(metrics.hash);
+      }
+      expect(hashes.size, `${filename} distinct authored frames`).toBe(frameCount);
     }
   });
 });
