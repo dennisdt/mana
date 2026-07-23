@@ -9,23 +9,10 @@ pub struct ProgressEnvelope {
 }
 
 #[derive(serde::Deserialize)]
-#[serde(untagged)]
-enum ProgressDocument {
-    Versioned(ProgressEnvelope),
-    Legacy(LegacyProgressState),
-}
-
-fn legacy_initialized() -> bool {
-    true
-}
-
-#[derive(serde::Deserialize)]
 struct LegacyProgressState {
     rank: usize,
     prestige: u32,
     prestige_token_floor: u64,
-    #[serde(default = "legacy_initialized")]
-    initialized: bool,
     tally: TallyState,
 }
 
@@ -51,25 +38,25 @@ pub fn encode_state(state: &ProgressState) -> std::io::Result<Vec<u8>> {
 }
 
 pub fn decode_state(bytes: &[u8]) -> std::io::Result<(ProgressState, bool)> {
-    let document = serde_json::from_slice(bytes).map_err(invalid_data)?;
-    match document {
-        ProgressDocument::Versioned(envelope) => {
-            if envelope.schema_version != SCHEMA_VERSION {
-                return Err(invalid_data("unsupported progress schema version"));
-            }
-            Ok((validate_rank(envelope.state)?, false))
+    let value = serde_json::from_slice::<serde_json::Value>(bytes).map_err(invalid_data)?;
+    if value.get("schema_version").is_some() {
+        let envelope = serde_json::from_value::<ProgressEnvelope>(value).map_err(invalid_data)?;
+        if envelope.schema_version != SCHEMA_VERSION {
+            return Err(invalid_data("unsupported progress schema version"));
         }
-        ProgressDocument::Legacy(legacy) => {
-            let state = ProgressState {
-                rank: legacy.rank,
-                prestige: legacy.prestige,
-                prestige_token_floor: legacy.prestige_token_floor,
-                initialized: legacy.initialized,
-                tally: legacy.tally,
-            };
-            Ok((validate_rank(state)?, true))
-        }
+        return Ok((validate_rank(envelope.state)?, false));
     }
+
+    let legacy = serde_json::from_value::<LegacyProgressState>(value).map_err(invalid_data)?;
+    let state = ProgressState {
+        rank: legacy.rank,
+        prestige: legacy.prestige,
+        prestige_token_floor: legacy.prestige_token_floor,
+        // A successful legacy parse represents existing user progress.
+        initialized: true,
+        tally: legacy.tally,
+    };
+    Ok((validate_rank(state)?, true))
 }
 
 #[cfg(test)]
@@ -111,6 +98,20 @@ mod tests {
     }
 
     #[test]
+    fn legacy_state_with_initialized_false_is_treated_as_initialized() {
+        let bytes = include_bytes!("../tests/fixtures/progress_v1_initialized_false.json");
+        let (state, migrated) = decode_state(bytes).unwrap();
+        assert!(migrated);
+        assert!(state.initialized);
+        assert_eq!((state.rank, state.prestige), (8, 7));
+        assert_eq!(state.prestige_token_floor, 123456);
+        assert_eq!(state.tally.total_tokens, 987654321);
+        assert_eq!(state.tally.claude_offsets["/fixture/claude.jsonl"], 44);
+        assert_eq!(state.tally.codex_offsets["/fixture/codex.jsonl"], 55);
+        assert_eq!(state.tally.codex_totals["/fixture/codex.jsonl"], 66);
+    }
+
+    #[test]
     fn version_two_roundtrips_every_field() {
         let original = fixture_state();
         let bytes = encode_state(&original).unwrap();
@@ -122,6 +123,15 @@ mod tests {
     #[test]
     fn rejects_unknown_future_schema() {
         let error = decode_state(br#"{"schema_version":99,"state":{}}"#).unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn rejects_flattened_document_with_future_schema_version() {
+        let error = decode_state(
+            br#"{"schema_version":99,"rank":8,"prestige":7,"prestige_token_floor":123456,"initialized":true,"tally":{}}"#,
+        )
+        .unwrap_err();
         assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
     }
 
