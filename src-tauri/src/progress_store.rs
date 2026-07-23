@@ -1,6 +1,44 @@
 use crate::progress::{ProgressState, TallyState, TIERS};
+use std::io::Write;
 
 pub const SCHEMA_VERSION: u32 = 2;
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProgressPaths {
+    pub primary: std::path::PathBuf,
+    pub backup: std::path::PathBuf,
+    pub pre_migration: std::path::PathBuf,
+    pub temporary: std::path::PathBuf,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RecoverySource {
+    Primary,
+    Backup,
+    PreMigration,
+    New,
+}
+
+#[derive(Debug)]
+pub struct LoadOutcome {
+    pub state: ProgressState,
+    pub source: RecoverySource,
+}
+
+impl ProgressPaths {
+    pub fn from_primary(primary: std::path::PathBuf) -> Self {
+        let dir = primary
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new(""))
+            .to_path_buf();
+        Self {
+            primary,
+            backup: dir.join("progress.json.bak"),
+            pre_migration: dir.join("progress.pre-migration-v1.json"),
+            temporary: dir.join("progress.json.tmp"),
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ProgressEnvelope {
@@ -59,13 +97,125 @@ pub fn decode_state(bytes: &[u8]) -> std::io::Result<(ProgressState, bool)> {
     Ok((validate_rank(state)?, true))
 }
 
+fn write_legacy_snapshot(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+    let mut file = match std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+    {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => return Ok(()),
+        Err(error) => return Err(error),
+    };
+    file.write_all(bytes)
+}
+
+pub fn load_state(paths: &ProgressPaths) -> std::io::Result<LoadOutcome> {
+    let candidates = [
+        (&paths.primary, RecoverySource::Primary),
+        (&paths.backup, RecoverySource::Backup),
+        (&paths.pre_migration, RecoverySource::PreMigration),
+    ];
+    let mut invalid_error = None;
+
+    for (path, source) in candidates {
+        let bytes = match std::fs::read(path) {
+            Ok(bytes) => bytes,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(error),
+        };
+
+        match decode_state(&bytes) {
+            Ok((state, is_legacy)) => {
+                if source == RecoverySource::Primary && is_legacy {
+                    write_legacy_snapshot(&paths.pre_migration, &bytes)?;
+                }
+                return Ok(LoadOutcome { state, source });
+            }
+            Err(error) => invalid_error = Some(error),
+        }
+    }
+
+    if let Some(error) = invalid_error {
+        return Err(error);
+    }
+
+    Ok(LoadOutcome {
+        state: ProgressState::default(),
+        source: RecoverySource::New,
+    })
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{decode_state, encode_state, ProgressEnvelope, SCHEMA_VERSION};
+    use super::{
+        decode_state, encode_state, load_state, ProgressEnvelope, ProgressPaths, RecoverySource,
+        SCHEMA_VERSION,
+    };
     use crate::progress::ProgressState;
+
+    static TEST_DIRECTORY_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+    struct TestDirectory(std::path::PathBuf);
+
+    impl Drop for TestDirectory {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn test_paths(label: &str) -> (TestDirectory, ProgressPaths) {
+        use std::sync::atomic::Ordering;
+        let id = TEST_DIRECTORY_ID.fetch_add(1, Ordering::Relaxed);
+        let dir = std::env::temp_dir()
+            .join(format!("mana-progress-{label}-{}-{id}", std::process::id(),));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let paths = ProgressPaths::from_primary(dir.join("progress.json"));
+        (TestDirectory(dir), paths)
+    }
 
     fn fixture_state() -> ProgressState {
         serde_json::from_slice(include_bytes!("../tests/fixtures/progress_v1.json")).unwrap()
+    }
+
+    #[test]
+    fn corrupt_primary_recovers_from_backup() {
+        let (dir, paths) = test_paths("backup-recovery");
+        std::fs::write(&paths.primary, b"not json").unwrap();
+        std::fs::write(&paths.backup, encode_state(&fixture_state()).unwrap()).unwrap();
+        let loaded = load_state(&paths).unwrap();
+        assert_eq!(loaded.source, RecoverySource::Backup);
+        assert_eq!(loaded.state, fixture_state());
+        drop(dir);
+    }
+
+    #[test]
+    fn existing_invalid_files_never_become_default() {
+        let (_dir, paths) = test_paths("invalid-existing");
+        std::fs::write(&paths.primary, b"broken").unwrap();
+        let error = load_state(&paths).unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn no_files_is_the_only_new_install_path() {
+        let (_dir, paths) = test_paths("new-install");
+        let loaded = load_state(&paths).unwrap();
+        assert_eq!(loaded.source, RecoverySource::New);
+        assert!(!loaded.state.initialized);
+    }
+
+    #[test]
+    fn legacy_snapshot_is_written_once_and_never_overwritten() {
+        let (_dir, paths) = test_paths("immutable-legacy");
+        let legacy = include_bytes!("../tests/fixtures/progress_v1.json");
+        std::fs::write(&paths.primary, legacy).unwrap();
+        load_state(&paths).unwrap();
+        let original = std::fs::read(&paths.pre_migration).unwrap();
+        std::fs::write(&paths.primary, br#"{"rank":0}"#).unwrap();
+        let _ = load_state(&paths);
+        assert_eq!(std::fs::read(&paths.pre_migration).unwrap(), original);
     }
 
     #[test]
