@@ -43,6 +43,7 @@ pub fn run() {
                 .build(),
         )
         .manage(poll::Snapshots::default())
+        .manage(activity::ActivityStore::default())
         .setup(|app| {
             // Menu-bar-only app: no Dock icon, never activates as a regular app.
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
@@ -166,5 +167,11 @@ mod tests {
         let center_y = (min_y + max_y) as f32 / 2.0;
         assert!((center_x - 17.5).abs() <= 2.0);
         assert!((center_y - 17.5).abs() <= 2.0);
+    }
+
+    #[test]
+    fn builder_registers_activity_store() {
+        let source = include_str!("lib.rs");
+        assert!(source.contains(".manage(activity::ActivityStore::default())"));
     }
 }

@@ -51,7 +51,7 @@ If a provider request temporarily fails, Mana keeps the last successful values v
 - Mana re-reads credentials for each poll and never writes or refreshes them.
 - Token values are never logged, persisted, or included in widget content.
 - Provider credentials are sent only to that provider's usage endpoint over HTTPS.
-- CLI activity detection is a local process check every five seconds; no activity telemetry leaves your Mac.
+- Attack activity is detected locally from Claude and Codex session-log writes once per second; Mana never uploads session content or activity telemetry.
 - Mana does not include analytics or an external backend.
 
 Review the credential and polling implementation in [`creds.rs`](src-tauri/src/creds.rs) and [`poll.rs`](src-tauri/src/poll.rs).
@@ -79,7 +79,7 @@ npm test
 cargo test --manifest-path src-tauri/Cargo.toml
 ```
 
-The frontend uses TypeScript and CSS inside a Tauri 2 shell. Native polling, credential access, menu-bar behavior, and process activity detection are implemented in Rust.
+The frontend uses TypeScript and CSS inside a Tauri 2 shell. Native polling, credential access, menu-bar behavior, and session-write activity detection are implemented in Rust.
 
 ## Known Limitations
 

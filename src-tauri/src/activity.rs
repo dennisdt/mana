@@ -1,6 +1,7 @@
+use serde::Serialize;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::Emitter;
 
@@ -70,76 +71,55 @@ impl ProviderActivity {
     }
 }
 
-/// True if the (`comm`, `args`) pair describes an interactive `name` CLI
-/// process: comm is `name` or ends in `/name`, and the args do not mark it
-/// as a resident server/helper (Codex.app's app-server). Takes the pair
-/// directly — joining comm+args into one string and re-splitting on space
-/// would misparse a comm path that itself contains a space.
-pub fn proc_matches(comm: &str, args: &str, name: &str) -> bool {
-    (comm == name || comm.ends_with(&format!("/{name}")))
-        && !args.contains("app-server")
-        && !comm.contains(".app/")
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+pub struct Activity {
+    claude: bool,
+    codex: bool,
 }
 
-/// Runs `ps -axo pid=,<field>=` and returns a pid -> field map.
-///
-/// `field` is deliberately fetched in its own ps invocation with pid first:
-/// BSD ps only gives the *last* requested `-o` column its natural width and
-/// truncates every earlier column to a small fixed width (comm truncates to
-/// 16 chars) even when the `=` (no-header) modifier is used and even when
-/// output isn't a tty. A single `-axo comm=,args=` call therefore mangles
-/// long executable paths (e.g. Codex.app's or Homebrew's), which breaks the
-/// `.app/` / suffix matching in `proc_matches`. Keeping `field` last in each
-/// call avoids the truncation.
-fn ps_field(field: &str) -> HashMap<String, String> {
-    let out = match Command::new("/bin/ps")
-        .args(["-axo", &format!("pid=,{field}=")])
-        .output()
-    {
-        Ok(o) if o.status.success() => o,
-        _ => return HashMap::new(),
-    };
-    String::from_utf8_lossy(&out.stdout)
-        .lines()
-        .filter_map(|l| {
-            let l = l.trim_start();
-            let sp = l.find(' ')?;
-            Some((l[..sp].to_string(), l[sp + 1..].to_string()))
-        })
-        .collect()
-}
-
-pub fn is_running(name: &str) -> bool {
-    let comms = ps_field("comm");
-    let args = ps_field("args");
-    let empty = String::new();
-    comms.iter().any(|(pid, comm)| {
-        let a = args.get(pid).unwrap_or(&empty);
-        proc_matches(comm, a, name)
-    })
-}
+#[derive(Default)]
+pub struct ActivityStore(pub Mutex<Activity>);
 
 pub fn spawn_activity_watcher(app: tauri::AppHandle) {
     tauri::async_runtime::spawn(async move {
-        let mut last: Option<(bool, bool)> = None;
-        let mut tick = tokio::time::interval(std::time::Duration::from_secs(5));
+        use tauri::Manager as _;
+
+        let Some(home) = std::env::var_os("HOME").map(PathBuf::from) else {
+            return;
+        };
+        let claude_root = home.join(".claude/projects");
+        let codex_root = home.join(".codex/sessions");
+        let mut claude = ProviderActivity::default();
+        let mut codex = ProviderActivity::default();
+        let mut tick = tokio::time::interval(Duration::from_secs(1));
+
         loop {
             tick.tick().await;
-            let now = (is_running("claude"), is_running("codex"));
-            if last != Some(now) {
-                last = Some(now);
-                let _ = app.emit(
-                    "activity",
-                    &serde_json::json!({ "claude": now.0, "codex": now.1 }),
-                );
+            let now = Instant::now();
+            let next = Activity {
+                claude: claude.update(jsonl_fingerprints(&claude_root), now),
+                codex: codex.update(jsonl_fingerprints(&codex_root), now),
+            };
+            let changed = {
+                let store = app.state::<ActivityStore>();
+                let current = &mut *store.0.lock().unwrap();
+                if *current == next {
+                    false
+                } else {
+                    *current = next;
+                    true
+                }
+            };
+            if changed {
+                let _ = app.emit("activity", next);
             }
         }
     });
 }
 
 #[tauri::command]
-pub fn get_activity() -> serde_json::Value {
-    serde_json::json!({ "claude": is_running("claude"), "codex": is_running("codex") })
+pub fn get_activity(store: tauri::State<'_, ActivityStore>) -> Activity {
+    *store.0.lock().unwrap()
 }
 
 #[cfg(test)]
@@ -212,5 +192,34 @@ mod tests {
         ));
         let _ = std::fs::remove_dir_all(&root);
         assert!(jsonl_fingerprints(&root).is_empty());
+    }
+
+    #[test]
+    fn providers_track_independently() {
+        let start = Instant::now();
+        let mut claude = ProviderActivity::default();
+        let mut codex = ProviderActivity::default();
+        claude.update(fingerprints(&[("claude.jsonl", 10, 1)]), start);
+        codex.update(fingerprints(&[("codex.jsonl", 10, 1)]), start);
+
+        assert!(claude.update(
+            fingerprints(&[("claude.jsonl", 20, 2)]),
+            start + Duration::from_secs(1),
+        ));
+        assert!(!codex.update(
+            fingerprints(&[("codex.jsonl", 10, 1)]),
+            start + Duration::from_secs(1),
+        ));
+    }
+
+    #[test]
+    fn activity_store_starts_quiet() {
+        assert_eq!(
+            *ActivityStore::default().0.lock().unwrap(),
+            Activity {
+                claude: false,
+                codex: false,
+            }
+        );
     }
 }
