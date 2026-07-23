@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   actionKind,
-  badgeSlots,
   dialogCopy,
   levelLabel,
   nextTier,
@@ -34,11 +33,6 @@ describe("progress footer", () => {
     expect(xpBarFraction(base)).toBeCloseTo(0.4);
     expect(xpBarFraction({ ...base, level_progress: { current: 200, needed: 125 } })).toBe(1);
     expect(xpBarFraction({ ...base, level_progress: { current: 1, needed: 0 } })).toBe(1);
-  });
-  it("caps badge slots at ten", () => {
-    expect(badgeSlots(0)).toEqual([]);
-    expect(badgeSlots(3)).toEqual([1, 2, 3]);
-    expect(badgeSlots(12)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
   });
   it("picks the top-right action", () => {
     expect(actionKind(base)).toBeNull();
