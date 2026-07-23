@@ -27,6 +27,13 @@ pub struct LoadOutcome {
     pub source: RecoverySource,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SaveCheckpoint {
+    TemporarySynced,
+    BackupReplaced,
+    PrimaryReplaced,
+}
+
 impl ProgressPaths {
     pub fn from_primary(primary: std::path::PathBuf) -> Self {
         let dir = parent_directory(&primary).to_path_buf();
@@ -220,6 +227,56 @@ fn read_candidate(
     std::fs::read(path).map(Some)
 }
 
+fn primary_contains_valid_state(path: &std::path::Path) -> std::io::Result<bool> {
+    match std::fs::symlink_metadata(path) {
+        Ok(_) => Ok(std::fs::read(path)
+            .and_then(|bytes| decode_state(&bytes))
+            .is_ok()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(error),
+    }
+}
+
+fn save_state_with_hook(
+    paths: &ProgressPaths,
+    state: &ProgressState,
+    mut hook: impl FnMut(SaveCheckpoint) -> std::io::Result<()>,
+) -> std::io::Result<()> {
+    let bytes = encode_state(state)?;
+    std::fs::create_dir_all(parent_directory(&paths.primary))?;
+    let mut temporary = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .write(true)
+        .open(&paths.temporary)?;
+    temporary.write_all(&bytes)?;
+    temporary.sync_all()?;
+    drop(temporary);
+    decode_state(&std::fs::read(&paths.temporary)?)?;
+    hook(SaveCheckpoint::TemporarySynced)?;
+
+    if primary_contains_valid_state(&paths.primary)? {
+        std::fs::rename(&paths.primary, &paths.backup)?;
+        hook(SaveCheckpoint::BackupReplaced)?;
+    }
+
+    std::fs::rename(&paths.temporary, &paths.primary)?;
+    hook(SaveCheckpoint::PrimaryReplaced)?;
+    sync_parent_directory(&paths.primary)
+}
+
+pub fn save_state(paths: &ProgressPaths, state: &ProgressState) -> std::io::Result<()> {
+    save_state_with_hook(paths, state, |_| Ok(()))
+}
+
+fn remove_temporary(path: &std::path::Path) -> std::io::Result<()> {
+    match std::fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error),
+    }
+}
+
 pub fn load_state(paths: &ProgressPaths) -> std::io::Result<LoadOutcome> {
     let candidates = [
         (&paths.primary, RecoverySource::Primary),
@@ -250,9 +307,13 @@ pub fn load_state(paths: &ProgressPaths) -> std::io::Result<LoadOutcome> {
                     }
                     continue;
                 }
-                if source == RecoverySource::Primary && is_legacy {
+                if source != RecoverySource::PreMigration && is_legacy {
                     write_legacy_snapshot(&paths.pre_migration, &bytes)?;
                 }
+                if source != RecoverySource::Primary || is_legacy {
+                    save_state(paths, &state)?;
+                }
+                remove_temporary(&paths.temporary)?;
                 return Ok(LoadOutcome { state, source });
             }
             Err(error) => {
@@ -276,8 +337,8 @@ pub fn load_state(paths: &ProgressPaths) -> std::io::Result<LoadOutcome> {
 #[cfg(test)]
 mod tests {
     use super::{
-        decode_state, encode_state, load_state, ProgressEnvelope, ProgressPaths, RecoverySource,
-        SCHEMA_VERSION,
+        decode_state, encode_state, load_state, save_state, save_state_with_hook, ProgressEnvelope,
+        ProgressPaths, RecoverySource, SaveCheckpoint, SCHEMA_VERSION,
     };
     use crate::progress::ProgressState;
 
@@ -329,15 +390,99 @@ mod tests {
         state
     }
 
+    fn load_exact(path: &std::path::Path) -> std::io::Result<ProgressState> {
+        let bytes = std::fs::read(path)?;
+        decode_state(&bytes).map(|(state, _)| state)
+    }
+
+    #[test]
+    fn save_keeps_previous_primary_as_backup() {
+        let (_dir, paths) = test_paths("backup-rotation");
+        let old = state_with_rank(3);
+        let new = state_with_rank(4);
+        save_state(&paths, &old).unwrap();
+        save_state(&paths, &new).unwrap();
+        assert_eq!(load_exact(&paths.primary).unwrap(), new);
+        assert_eq!(load_exact(&paths.backup).unwrap(), old);
+    }
+
+    #[test]
+    fn every_interrupted_boundary_leaves_a_recoverable_state() {
+        for checkpoint in [
+            SaveCheckpoint::TemporarySynced,
+            SaveCheckpoint::BackupReplaced,
+            SaveCheckpoint::PrimaryReplaced,
+        ] {
+            let (_dir, paths) = test_paths(&format!("interrupt-{checkpoint:?}"));
+            save_state(&paths, &state_with_rank(3)).unwrap();
+            let error = save_state_with_hook(&paths, &state_with_rank(4), |reached| {
+                if reached == checkpoint {
+                    return Err(std::io::Error::other("simulated interruption"));
+                }
+                Ok(())
+            })
+            .unwrap_err();
+            assert_eq!(error.kind(), std::io::ErrorKind::Other);
+            match checkpoint {
+                SaveCheckpoint::TemporarySynced => {
+                    assert_eq!(load_exact(&paths.primary).unwrap().rank, 3);
+                    assert_eq!(load_exact(&paths.temporary).unwrap().rank, 4);
+                }
+                SaveCheckpoint::BackupReplaced => {
+                    assert!(!paths.primary.exists());
+                    assert_eq!(load_exact(&paths.backup).unwrap().rank, 3);
+                    assert_eq!(load_exact(&paths.temporary).unwrap().rank, 4);
+                }
+                SaveCheckpoint::PrimaryReplaced => {
+                    assert_eq!(load_exact(&paths.primary).unwrap().rank, 4);
+                    assert_eq!(load_exact(&paths.backup).unwrap().rank, 3);
+                    assert!(!paths.temporary.exists());
+                }
+            }
+            let loaded = load_state(&paths).unwrap();
+            assert!([3, 4].contains(&loaded.state.rank));
+        }
+    }
+
     #[test]
     fn corrupt_primary_recovers_from_backup() {
         let (dir, paths) = test_paths("backup-recovery");
         std::fs::write(&paths.primary, b"not json").unwrap();
-        std::fs::write(&paths.backup, encode_state(&fixture_state()).unwrap()).unwrap();
+        let backup = encode_state(&fixture_state()).unwrap();
+        std::fs::write(&paths.backup, &backup).unwrap();
         let loaded = load_state(&paths).unwrap();
         assert_eq!(loaded.source, RecoverySource::Backup);
         assert_eq!(loaded.state, fixture_state());
+        assert_eq!(load_exact(&paths.primary).unwrap(), fixture_state());
+        assert_eq!(std::fs::read(&paths.backup).unwrap(), backup);
         drop(dir);
+    }
+
+    #[test]
+    fn valid_load_removes_an_abandoned_temporary_file() {
+        let (_dir, paths) = test_paths("temporary-cleanup");
+        let state = state_with_rank(3);
+        std::fs::write(&paths.primary, encode_state(&state).unwrap()).unwrap();
+        std::fs::write(&paths.temporary, b"abandoned temporary").unwrap();
+
+        let loaded = load_state(&paths).unwrap();
+
+        assert_eq!(loaded.state, state);
+        assert!(!paths.temporary.exists());
+    }
+
+    #[test]
+    fn failed_load_preserves_an_abandoned_temporary_file() {
+        let (_dir, paths) = test_paths("temporary-preserved");
+        std::fs::write(&paths.primary, b"invalid primary").unwrap();
+        std::fs::write(&paths.temporary, b"abandoned temporary").unwrap();
+
+        load_state(&paths).unwrap_err();
+
+        assert_eq!(
+            std::fs::read(&paths.temporary).unwrap(),
+            b"abandoned temporary"
+        );
     }
 
     #[test]
@@ -487,6 +632,22 @@ mod tests {
     }
 
     #[test]
+    fn legacy_backup_is_snapshotted_before_primary_repair() {
+        let (_dir, paths) = test_paths("legacy-backup");
+        let legacy = include_bytes!("../tests/fixtures/progress_v1.json");
+        std::fs::write(&paths.primary, b"invalid primary").unwrap();
+        std::fs::write(&paths.backup, legacy).unwrap();
+
+        let loaded = load_state(&paths).unwrap();
+
+        assert_eq!(loaded.source, RecoverySource::Backup);
+        assert_eq!(loaded.state, fixture_state());
+        assert_eq!(std::fs::read(&paths.pre_migration).unwrap(), legacy);
+        assert_eq!(load_exact(&paths.primary).unwrap(), fixture_state());
+        assert_eq!(std::fs::read(&paths.backup).unwrap(), legacy);
+    }
+
+    #[test]
     fn invalid_primary_and_backup_recover_from_pre_migration_snapshot() {
         let (_dir, paths) = test_paths("snapshot-recovery");
         std::fs::write(&paths.primary, b"invalid primary").unwrap();
@@ -498,21 +659,22 @@ mod tests {
 
         assert_eq!(loaded.source, RecoverySource::PreMigration);
         assert_eq!(loaded.state, fixture_state());
+        assert_eq!(load_exact(&paths.primary).unwrap(), fixture_state());
+        assert_eq!(std::fs::read(&paths.backup).unwrap(), b"invalid backup");
     }
 
     #[test]
-    fn recovery_preserves_every_candidate_byte_for_byte() {
+    fn snapshot_recovery_repairs_only_the_invalid_primary() {
         let (_dir, paths) = test_paths("candidate-preservation");
-        let invalid_primary = b"invalid primary";
         let invalid_backup = b"{\"schema_version\":2}";
         let snapshot = include_bytes!("../tests/fixtures/progress_v1.json");
-        std::fs::write(&paths.primary, invalid_primary).unwrap();
+        std::fs::write(&paths.primary, b"invalid primary").unwrap();
         std::fs::write(&paths.backup, invalid_backup).unwrap();
         std::fs::write(&paths.pre_migration, snapshot).unwrap();
 
         load_state(&paths).unwrap();
 
-        assert_eq!(std::fs::read(&paths.primary).unwrap(), invalid_primary);
+        assert_eq!(load_exact(&paths.primary).unwrap(), fixture_state());
         assert_eq!(std::fs::read(&paths.backup).unwrap(), invalid_backup);
         assert_eq!(std::fs::read(&paths.pre_migration).unwrap(), snapshot);
     }
@@ -550,7 +712,9 @@ mod tests {
         assert!(std::fs::symlink_metadata(&paths.primary)
             .unwrap()
             .file_type()
-            .is_symlink());
+            .is_file());
+        assert_eq!(load_exact(&paths.primary).unwrap().rank, 4);
+        assert_eq!(load_exact(&paths.backup).unwrap().rank, 4);
     }
 
     #[cfg(unix)]
