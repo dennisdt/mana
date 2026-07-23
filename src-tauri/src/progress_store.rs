@@ -2,7 +2,7 @@ use crate::progress::{ProgressState, TallyState, TIERS};
 use std::io::{Read, Seek, Write};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-pub const SCHEMA_VERSION: u32 = 2;
+pub const SCHEMA_VERSION: u32 = 3;
 pub const PRIMARY_PROGRESS_FILENAME: &str = "progress.json";
 pub const BACKUP_PROGRESS_FILENAME: &str = "progress.json.bak";
 static SNAPSHOT_TEMPORARY_ID: AtomicU64 = AtomicU64::new(0);
@@ -11,7 +11,8 @@ static SNAPSHOT_TEMPORARY_ID: AtomicU64 = AtomicU64::new(0);
 pub struct ProgressPaths {
     pub primary: std::path::PathBuf,
     pub backup: std::path::PathBuf,
-    pub pre_migration: std::path::PathBuf,
+    pub pre_migration_v1: std::path::PathBuf,
+    pub pre_migration_v2: std::path::PathBuf,
     pub temporary: std::path::PathBuf,
 }
 
@@ -50,6 +51,7 @@ pub enum RecoverySource {
 pub struct LoadOutcome {
     pub state: ProgressState,
     pub source: RecoverySource,
+    pub needs_output_rebuild: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -65,7 +67,8 @@ impl ProgressPaths {
         Self {
             primary,
             backup: dir.join(BACKUP_PROGRESS_FILENAME),
-            pre_migration: dir.join("progress.pre-migration-v1.json"),
+            pre_migration_v1: dir.join("progress.pre-migration-v1.json"),
+            pre_migration_v2: dir.join("progress.pre-migration-v2.json"),
             temporary: dir.join("progress.json.tmp"),
         }
     }
@@ -78,22 +81,45 @@ pub struct ProgressEnvelope {
 }
 
 #[derive(serde::Deserialize)]
-struct ProgressEnvelopeWire {
+struct ProgressEnvelopeV3Wire {
     schema_version: u32,
-    state: ProgressStateWire,
+    state: ProgressStateV3Wire,
 }
 
 #[derive(serde::Deserialize)]
-struct ProgressStateWire {
+struct ProgressStateV3Wire {
     rank: usize,
     prestige: u32,
     prestige_token_floor: u64,
     initialized: bool,
-    tally: TallyStateWire,
+    tally: TallyStateV3Wire,
 }
 
 #[derive(serde::Deserialize)]
-struct TallyStateWire {
+struct TallyStateV3Wire {
+    output_tokens: u64,
+    claude_offsets: std::collections::HashMap<String, u64>,
+    codex_offsets: std::collections::HashMap<String, u64>,
+    codex_output_totals: std::collections::HashMap<String, u64>,
+}
+
+#[derive(serde::Deserialize)]
+struct ProgressEnvelopeV2Wire {
+    schema_version: u32,
+    state: ProgressStateV2Wire,
+}
+
+#[derive(serde::Deserialize)]
+struct ProgressStateV2Wire {
+    rank: usize,
+    prestige: u32,
+    prestige_token_floor: u64,
+    initialized: bool,
+    tally: TallyStateV2Wire,
+}
+
+#[derive(serde::Deserialize)]
+struct TallyStateV2Wire {
     total_tokens: u64,
     claude_offsets: std::collections::HashMap<String, u64>,
     codex_offsets: std::collections::HashMap<String, u64>,
@@ -120,19 +146,51 @@ struct LegacyTallyStateWire {
     codex_totals: std::collections::HashMap<String, u64>,
 }
 
-impl From<TallyStateWire> for TallyState {
-    fn from(wire: TallyStateWire) -> Self {
+impl ProgressStateV2Wire {
+    fn validate(self) -> std::io::Result<()> {
+        let rank = self.rank;
+        let _required_fields = (
+            self.prestige,
+            self.prestige_token_floor,
+            self.initialized,
+            self.tally.total_tokens,
+            self.tally.claude_offsets,
+            self.tally.codex_offsets,
+            self.tally.codex_totals,
+        );
+        validate_wire_rank(rank)
+    }
+}
+
+impl LegacyProgressStateWire {
+    fn validate(self) -> std::io::Result<()> {
+        let rank = self.rank;
+        let _required_fields = (
+            self.prestige,
+            self.prestige_token_floor,
+            self._initialized,
+            self.tally.total_tokens,
+            self.tally.claude_offsets,
+            self.tally.codex_offsets,
+            self.tally.codex_totals,
+        );
+        validate_wire_rank(rank)
+    }
+}
+
+impl From<TallyStateV3Wire> for TallyState {
+    fn from(wire: TallyStateV3Wire) -> Self {
         Self {
-            total_tokens: wire.total_tokens,
+            output_tokens: wire.output_tokens,
             claude_offsets: wire.claude_offsets,
             codex_offsets: wire.codex_offsets,
-            codex_totals: wire.codex_totals,
+            codex_output_totals: wire.codex_output_totals,
         }
     }
 }
 
-impl From<ProgressStateWire> for ProgressState {
-    fn from(wire: ProgressStateWire) -> Self {
+impl From<ProgressStateV3Wire> for ProgressState {
+    fn from(wire: ProgressStateV3Wire) -> Self {
         Self {
             rank: wire.rank,
             prestige: wire.prestige,
@@ -141,6 +199,18 @@ impl From<ProgressStateWire> for ProgressState {
             tally: wire.tally.into(),
         }
     }
+}
+
+#[derive(Debug, PartialEq)]
+enum DecodedState {
+    Current(ProgressState),
+    NeedsOutputRebuild { source_schema: u32 },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SnapshotSchema {
+    V1,
+    V2,
 }
 
 fn invalid_data(error: impl std::fmt::Display) -> std::io::Error {
@@ -235,6 +305,15 @@ fn validate_rank(state: ProgressState) -> std::io::Result<ProgressState> {
     Ok(state)
 }
 
+fn validate_wire_rank(rank: usize) -> std::io::Result<()> {
+    if rank >= TIERS.len() {
+        return Err(invalid_data(
+            "progress rank is outside the known tier table",
+        ));
+    }
+    Ok(())
+}
+
 pub fn encode_state(state: &ProgressState) -> std::io::Result<Vec<u8>> {
     serde_json::to_vec(&ProgressEnvelope {
         schema_version: SCHEMA_VERSION,
@@ -243,32 +322,37 @@ pub fn encode_state(state: &ProgressState) -> std::io::Result<Vec<u8>> {
     .map_err(|error| std::io::Error::new(std::io::ErrorKind::Other, error))
 }
 
-pub fn decode_state(bytes: &[u8]) -> std::io::Result<(ProgressState, bool)> {
+fn decode_state(bytes: &[u8]) -> std::io::Result<DecodedState> {
     let value = serde_json::from_slice::<serde_json::Value>(bytes).map_err(invalid_data)?;
-    if value.get("schema_version").is_some() {
-        let envelope =
-            serde_json::from_value::<ProgressEnvelopeWire>(value).map_err(invalid_data)?;
-        if envelope.schema_version != SCHEMA_VERSION {
-            return Err(invalid_data("unsupported progress schema version"));
-        }
-        return Ok((validate_rank(envelope.state.into())?, false));
+    if let Some(version_value) = value.get("schema_version") {
+        let version = version_value
+            .as_u64()
+            .ok_or_else(|| invalid_data("progress schema version is not an unsigned integer"))?;
+        return match version {
+            version if version == u64::from(SCHEMA_VERSION) => {
+                let envelope = serde_json::from_value::<ProgressEnvelopeV3Wire>(value)
+                    .map_err(invalid_data)?;
+                if envelope.schema_version != SCHEMA_VERSION {
+                    return Err(invalid_data("unsupported progress schema version"));
+                }
+                Ok(DecodedState::Current(validate_rank(envelope.state.into())?))
+            }
+            2 => {
+                let envelope = serde_json::from_value::<ProgressEnvelopeV2Wire>(value)
+                    .map_err(invalid_data)?;
+                if envelope.schema_version != 2 {
+                    return Err(invalid_data("unsupported progress schema version"));
+                }
+                envelope.state.validate()?;
+                Ok(DecodedState::NeedsOutputRebuild { source_schema: 2 })
+            }
+            _ => Err(invalid_data("unsupported progress schema version")),
+        };
     }
 
     let legacy = serde_json::from_value::<LegacyProgressStateWire>(value).map_err(invalid_data)?;
-    let state = ProgressState {
-        rank: legacy.rank,
-        prestige: legacy.prestige,
-        prestige_token_floor: legacy.prestige_token_floor,
-        // A successful legacy parse represents existing user progress.
-        initialized: true,
-        tally: TallyState {
-            total_tokens: legacy.tally.total_tokens,
-            claude_offsets: legacy.tally.claude_offsets,
-            codex_offsets: legacy.tally.codex_offsets,
-            codex_totals: legacy.tally.codex_totals,
-        },
-    };
-    Ok((validate_rank(state)?, true))
+    legacy.validate()?;
+    Ok(DecodedState::NeedsOutputRebuild { source_schema: 1 })
 }
 
 struct TemporarySnapshot(std::path::PathBuf);
@@ -279,20 +363,36 @@ impl Drop for TemporarySnapshot {
     }
 }
 
-fn validate_snapshot(path: &std::path::Path) -> std::io::Result<Vec<u8>> {
+fn snapshot_matches(decoded: &DecodedState, expected_schema: SnapshotSchema) -> bool {
+    matches!(
+        (decoded, expected_schema),
+        (
+            DecodedState::NeedsOutputRebuild { source_schema: 1 },
+            SnapshotSchema::V1
+        ) | (
+            DecodedState::NeedsOutputRebuild { source_schema: 2 },
+            SnapshotSchema::V2
+        )
+    )
+}
+
+fn validate_snapshot(
+    path: &std::path::Path,
+    expected_schema: SnapshotSchema,
+) -> std::io::Result<Vec<u8>> {
     let metadata = std::fs::symlink_metadata(path)?;
     if !metadata.file_type().is_file() {
         return Err(invalid_data(format!(
-            "legacy snapshot is not a regular file: {}",
+            "pre-migration snapshot is not a regular file: {}",
             path.display()
         )));
     }
 
     let bytes = std::fs::read(path)?;
-    let (_, is_legacy) = decode_state(&bytes)?;
-    if !is_legacy {
+    let decoded = decode_state(&bytes)?;
+    if !snapshot_matches(&decoded, expected_schema) {
         return Err(invalid_data(format!(
-            "legacy snapshot contains versioned progress: {}",
+            "pre-migration snapshot contains the wrong progress schema: {}",
             path.display()
         )));
     }
@@ -328,11 +428,15 @@ fn sync_parent_directory(path: &std::path::Path) -> std::io::Result<()> {
     std::fs::File::open(parent_directory(path))?.sync_all()
 }
 
-fn write_legacy_snapshot(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
-    let (_, is_legacy) = decode_state(bytes)?;
-    if !is_legacy {
+fn write_immutable_snapshot(
+    path: &std::path::Path,
+    bytes: &[u8],
+    expected_schema: SnapshotSchema,
+) -> std::io::Result<()> {
+    let decoded = decode_state(bytes)?;
+    if !snapshot_matches(&decoded, expected_schema) {
         return Err(invalid_data(
-            "pre-migration snapshot input is not legacy progress",
+            "pre-migration snapshot input has the wrong progress schema",
         ));
     }
 
@@ -342,15 +446,15 @@ fn write_legacy_snapshot(path: &std::path::Path, bytes: &[u8]) -> std::io::Resul
     drop(file);
 
     let staged_bytes = std::fs::read(&temporary.0)?;
-    let (_, staged_is_legacy) = decode_state(&staged_bytes)?;
-    if !staged_is_legacy {
+    let staged = decode_state(&staged_bytes)?;
+    if !snapshot_matches(&staged, expected_schema) {
         return Err(invalid_data(
-            "staged pre-migration snapshot is not legacy progress",
+            "staged pre-migration snapshot has the wrong progress schema",
         ));
     }
     if staged_bytes != bytes {
         return Err(invalid_data(
-            "staged pre-migration snapshot differs from legacy progress",
+            "staged pre-migration snapshot differs from source progress",
         ));
     }
 
@@ -362,7 +466,7 @@ fn write_legacy_snapshot(path: &std::path::Path, bytes: &[u8]) -> std::io::Resul
             sync_result
         }
         Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
-            validate_snapshot(path)?;
+            validate_snapshot(path, expected_schema)?;
             Ok(())
         }
         Err(error) => Err(error),
@@ -423,7 +527,7 @@ fn primary_contains_valid_state(path: &std::path::Path) -> std::io::Result<bool>
 
 fn regular_file_contains_valid_state(
     path: &std::path::Path,
-    require_legacy: bool,
+    expected_snapshot: Option<SnapshotSchema>,
 ) -> std::io::Result<bool> {
     let metadata = match std::fs::symlink_metadata(path) {
         Ok(metadata) => metadata,
@@ -435,7 +539,9 @@ fn regular_file_contains_valid_state(
     }
 
     match decode_state(&std::fs::read(path)?) {
-        Ok((_, is_legacy)) => Ok(!require_legacy || is_legacy),
+        Ok(decoded) => Ok(expected_snapshot
+            .map(|schema| snapshot_matches(&decoded, schema))
+            .unwrap_or(true)),
         Err(error) if error.kind() == std::io::ErrorKind::InvalidData => Ok(false),
         Err(error) => Err(error),
     }
@@ -445,10 +551,13 @@ fn has_stable_recovery_source(
     paths: &ProgressPaths,
     primary_is_valid: bool,
 ) -> std::io::Result<bool> {
-    if primary_is_valid || regular_file_contains_valid_state(&paths.backup, false)? {
+    if primary_is_valid || regular_file_contains_valid_state(&paths.backup, None)? {
         return Ok(true);
     }
-    regular_file_contains_valid_state(&paths.pre_migration, true)
+    if regular_file_contains_valid_state(&paths.pre_migration_v2, Some(SnapshotSchema::V2))? {
+        return Ok(true);
+    }
+    regular_file_contains_valid_state(&paths.pre_migration_v1, Some(SnapshotSchema::V1))
 }
 
 fn open_save_temporary(
@@ -539,7 +648,11 @@ fn save_state_with_hook(
     temporary.rewind()?;
     let mut staged_bytes = Vec::new();
     temporary.read_to_end(&mut staged_bytes)?;
-    decode_state(&staged_bytes)?;
+    if !matches!(decode_state(&staged_bytes)?, DecodedState::Current(_)) {
+        return Err(invalid_data(
+            "staged progress temporary is not current progress",
+        ));
+    }
     validate_staged_temporary(&paths.temporary, &temporary_metadata)?;
     hook(SaveCheckpoint::TemporarySynced)?;
 
@@ -600,13 +713,12 @@ fn recover_temporary(paths: &ProgressPaths) -> std::io::Result<Option<LoadOutcom
     let temporary_metadata = temporary.metadata()?;
     let mut bytes = Vec::new();
     temporary.read_to_end(&mut bytes)?;
-    let (state, is_legacy) = decode_state(&bytes)?;
-    if is_legacy {
+    let DecodedState::Current(state) = decode_state(&bytes)? else {
         return Err(invalid_data(format!(
-            "progress temporary contains legacy progress: {}",
+            "progress temporary contains pre-v3 progress: {}",
             paths.temporary.display()
         )));
-    }
+    };
 
     validate_staged_temporary(&paths.temporary, &temporary_metadata)?;
     drop(temporary);
@@ -615,19 +727,29 @@ fn recover_temporary(paths: &ProgressPaths) -> std::io::Result<Option<LoadOutcom
     Ok(Some(LoadOutcome {
         state,
         source: RecoverySource::Temporary,
+        needs_output_rebuild: false,
     }))
 }
 
 pub fn load_state(paths: &ProgressPaths) -> std::io::Result<LoadOutcome> {
     let candidates = [
-        (&paths.primary, RecoverySource::Primary),
-        (&paths.backup, RecoverySource::Backup),
-        (&paths.pre_migration, RecoverySource::PreMigration),
+        (&paths.primary, RecoverySource::Primary, None),
+        (&paths.backup, RecoverySource::Backup, None),
+        (
+            &paths.pre_migration_v2,
+            RecoverySource::PreMigration,
+            Some(SnapshotSchema::V2),
+        ),
+        (
+            &paths.pre_migration_v1,
+            RecoverySource::PreMigration,
+            Some(SnapshotSchema::V1),
+        ),
     ];
     let mut recovery_error = None;
 
-    for (path, source) in candidates {
-        let bytes = match read_candidate(path, source == RecoverySource::PreMigration) {
+    for (path, source, expected_snapshot) in candidates {
+        let bytes = match read_candidate(path, expected_snapshot.is_some()) {
             Ok(Some(bytes)) => bytes,
             Ok(None) => continue,
             Err(CandidateReadError::RegularFile(error)) if source == RecoverySource::Primary => {
@@ -642,23 +764,57 @@ pub fn load_state(paths: &ProgressPaths) -> std::io::Result<LoadOutcome> {
         };
 
         match decode_state(&bytes) {
-            Ok((state, is_legacy)) => {
-                if source == RecoverySource::PreMigration && !is_legacy {
+            Ok(DecodedState::Current(state)) => {
+                if expected_snapshot.is_some() {
                     if recovery_error.is_none() {
                         recovery_error = Some(invalid_data(
-                            "pre-migration snapshot contains versioned progress",
+                            "pre-migration snapshot contains current progress",
                         ));
                     }
                     continue;
                 }
-                if source != RecoverySource::PreMigration && is_legacy {
-                    write_legacy_snapshot(&paths.pre_migration, &bytes)?;
-                }
-                if source != RecoverySource::Primary || is_legacy {
+                if source != RecoverySource::Primary {
                     save_state(paths, &state)?;
                 }
                 remove_temporary(&paths.temporary)?;
-                return Ok(LoadOutcome { state, source });
+                return Ok(LoadOutcome {
+                    state,
+                    source,
+                    needs_output_rebuild: false,
+                });
+            }
+            Ok(DecodedState::NeedsOutputRebuild { source_schema }) => {
+                let snapshot_schema = match source_schema {
+                    1 => SnapshotSchema::V1,
+                    2 => SnapshotSchema::V2,
+                    _ => {
+                        if recovery_error.is_none() {
+                            recovery_error = Some(invalid_data("unsupported pre-migration schema"));
+                        }
+                        continue;
+                    }
+                };
+                if expected_snapshot.is_some_and(|expected| expected != snapshot_schema) {
+                    if recovery_error.is_none() {
+                        recovery_error = Some(invalid_data(
+                            "pre-migration snapshot contains the wrong progress schema",
+                        ));
+                    }
+                    continue;
+                }
+                if expected_snapshot.is_none() {
+                    let snapshot_path = match snapshot_schema {
+                        SnapshotSchema::V1 => &paths.pre_migration_v1,
+                        SnapshotSchema::V2 => &paths.pre_migration_v2,
+                    };
+                    write_immutable_snapshot(snapshot_path, &bytes, snapshot_schema)?;
+                }
+                remove_temporary(&paths.temporary)?;
+                return Ok(LoadOutcome {
+                    state: ProgressState::default(),
+                    source,
+                    needs_output_rebuild: true,
+                });
             }
             Err(error) => {
                 if recovery_error.is_none() {
@@ -681,6 +837,7 @@ pub fn load_state(paths: &ProgressPaths) -> std::io::Result<LoadOutcome> {
     Ok(LoadOutcome {
         state: ProgressState::default(),
         source: RecoverySource::New,
+        needs_output_rebuild: false,
     })
 }
 
@@ -688,10 +845,10 @@ pub fn load_state(paths: &ProgressPaths) -> std::io::Result<LoadOutcome> {
 mod tests {
     use super::{
         decode_state, encode_state, load_state, save_state, save_state_with_hook,
-        validate_external_v1_fixture, ProgressEnvelope, ProgressPaths, RecoverySource,
-        SaveCheckpoint, SCHEMA_VERSION,
+        validate_external_v1_fixture, DecodedState, ProgressEnvelope, ProgressPaths,
+        RecoverySource, SaveCheckpoint, SCHEMA_VERSION,
     };
-    use crate::progress::ProgressState;
+    use crate::progress::{ProgressState, TallyState};
 
     static TEST_DIRECTORY_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     static TEST_CURRENT_DIRECTORY: std::sync::Mutex<()> = std::sync::Mutex::new(());
@@ -755,7 +912,31 @@ mod tests {
     }
 
     fn fixture_state() -> ProgressState {
-        serde_json::from_slice(include_bytes!("../tests/fixtures/progress_v1.json")).unwrap()
+        output_fixture_state()
+    }
+
+    fn output_fixture_state() -> ProgressState {
+        ProgressState {
+            rank: 8,
+            prestige: 7,
+            prestige_token_floor: 123_456,
+            initialized: true,
+            tally: TallyState {
+                output_tokens: 987_654_321,
+                claude_offsets: std::collections::HashMap::from([(
+                    "/fixture/claude.jsonl".into(),
+                    44,
+                )]),
+                codex_offsets: std::collections::HashMap::from([(
+                    "/fixture/codex.jsonl".into(),
+                    55,
+                )]),
+                codex_output_totals: std::collections::HashMap::from([(
+                    "/fixture/codex.jsonl".into(),
+                    66,
+                )]),
+            },
+        }
     }
 
     fn state_with_rank(rank: usize) -> ProgressState {
@@ -766,7 +947,12 @@ mod tests {
 
     fn load_exact(path: &std::path::Path) -> std::io::Result<ProgressState> {
         let bytes = std::fs::read(path)?;
-        decode_state(&bytes).map(|(state, _)| state)
+        match decode_state(&bytes)? {
+            DecodedState::Current(state) => Ok(state),
+            DecodedState::NeedsOutputRebuild { .. } => {
+                Err(super::invalid_data("progress is not schema v3"))
+            }
+        }
     }
 
     #[test]
@@ -927,7 +1113,7 @@ mod tests {
         assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
         assert_eq!(std::fs::read(&paths.temporary).unwrap(), legacy);
         assert!(!paths.primary.exists());
-        assert!(!paths.pre_migration.exists());
+        assert!(!paths.pre_migration_v1.exists());
     }
 
     #[test]
@@ -1078,7 +1264,134 @@ mod tests {
         let (_dir, paths) = test_paths("new-install");
         let loaded = load_state(&paths).unwrap();
         assert_eq!(loaded.source, RecoverySource::New);
+        assert!(!loaded.needs_output_rebuild);
         assert!(!loaded.state.initialized);
+    }
+
+    #[test]
+    fn valid_v2_primary_returns_fresh_rebuild_without_replacing_primary() {
+        let (_dir, paths) = test_paths("v2-rebuild");
+        let v2 = include_bytes!("../tests/fixtures/progress_v2.json");
+        std::fs::write(&paths.primary, v2).unwrap();
+
+        let loaded = load_state(&paths).unwrap();
+
+        assert!(loaded.needs_output_rebuild);
+        assert_eq!(loaded.state, ProgressState::default());
+        assert_eq!(std::fs::read(&paths.primary).unwrap(), v2);
+        assert_eq!(std::fs::read(&paths.pre_migration_v2).unwrap(), v2);
+    }
+
+    #[test]
+    fn existing_valid_v2_recovery_is_never_overwritten() {
+        let (_dir, paths) = test_paths("v2-immutable");
+        let first = include_bytes!("../tests/fixtures/progress_v2.json");
+        let mut second = serde_json::from_slice::<serde_json::Value>(first).unwrap();
+        second["state"]["rank"] = 3.into();
+        std::fs::write(&paths.pre_migration_v2, first).unwrap();
+        std::fs::write(&paths.primary, serde_json::to_vec(&second).unwrap()).unwrap();
+
+        load_state(&paths).unwrap();
+
+        assert_eq!(std::fs::read(&paths.pre_migration_v2).unwrap(), first);
+    }
+
+    #[test]
+    fn valid_v3_primary_never_requests_output_rebuild() {
+        let (_dir, paths) = test_paths("v3-no-rebuild");
+        let state = output_fixture_state();
+        std::fs::write(&paths.primary, encode_state(&state).unwrap()).unwrap();
+
+        let loaded = load_state(&paths).unwrap();
+
+        assert_eq!(loaded.state, state);
+        assert!(!loaded.needs_output_rebuild);
+    }
+
+    #[test]
+    fn incomplete_v2_primary_uses_valid_v3_backup() {
+        let (_dir, paths) = test_paths("incomplete-v2-valid-v3-backup");
+        let mut damaged = serde_json::from_slice::<serde_json::Value>(include_bytes!(
+            "../tests/fixtures/progress_v2.json"
+        ))
+        .unwrap();
+        damaged["state"]["tally"]
+            .as_object_mut()
+            .unwrap()
+            .remove("total_tokens");
+        std::fs::write(&paths.primary, serde_json::to_vec(&damaged).unwrap()).unwrap();
+        let backup_state = output_fixture_state();
+        let backup = encode_state(&backup_state).unwrap();
+        std::fs::write(&paths.backup, &backup).unwrap();
+
+        let loaded = load_state(&paths).unwrap();
+
+        assert_eq!(loaded.source, RecoverySource::Backup);
+        assert_eq!(loaded.state, backup_state);
+        assert!(!loaded.needs_output_rebuild);
+        assert_eq!(std::fs::read(&paths.backup).unwrap(), backup);
+        assert!(!paths.pre_migration_v2.exists());
+    }
+
+    #[test]
+    fn invalid_existing_v2_recovery_fails_closed() {
+        let (_dir, paths) = test_paths("invalid-v2-recovery");
+        let v2 = include_bytes!("../tests/fixtures/progress_v2.json");
+        let invalid = b"{";
+        std::fs::write(&paths.primary, v2).unwrap();
+        std::fs::write(&paths.pre_migration_v2, invalid).unwrap();
+
+        let error = load_state(&paths).unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+        assert_eq!(std::fs::read(&paths.pre_migration_v2).unwrap(), invalid);
+        assert_eq!(std::fs::read(&paths.primary).unwrap(), v2);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unreadable_existing_v2_recovery_fails_closed() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let (_dir, paths) = test_paths("unreadable-v2-recovery");
+        let v2 = include_bytes!("../tests/fixtures/progress_v2.json");
+        std::fs::write(&paths.primary, v2).unwrap();
+        std::fs::write(&paths.pre_migration_v2, v2).unwrap();
+
+        let error = {
+            let _permissions = RestoredPermissions::new(&paths.pre_migration_v2);
+            let mut unreadable = std::fs::metadata(&paths.pre_migration_v2)
+                .unwrap()
+                .permissions();
+            unreadable.set_mode(0);
+            std::fs::set_permissions(&paths.pre_migration_v2, unreadable).unwrap();
+            load_state(&paths).unwrap_err()
+        };
+
+        assert_eq!(error.kind(), std::io::ErrorKind::PermissionDenied);
+        assert_eq!(std::fs::read(&paths.primary).unwrap(), v2);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlink_existing_v2_recovery_fails_closed_without_changing_target() {
+        use std::os::unix::fs::symlink;
+
+        let (dir, paths) = test_paths("symlink-v2-recovery");
+        let v2 = include_bytes!("../tests/fixtures/progress_v2.json");
+        let target = dir.0.join("v2-recovery-target.json");
+        std::fs::write(&paths.primary, v2).unwrap();
+        std::fs::write(&target, v2).unwrap();
+        symlink(&target, &paths.pre_migration_v2).unwrap();
+
+        let error = load_state(&paths).unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+        assert_eq!(std::fs::read(&target).unwrap(), v2);
+        assert!(std::fs::symlink_metadata(&paths.pre_migration_v2)
+            .unwrap()
+            .file_type()
+            .is_symlink());
     }
 
     #[test]
@@ -1090,12 +1403,18 @@ mod tests {
         std::fs::write(&paths.primary, first_legacy).unwrap();
         let first_load = load_state(&paths).unwrap();
         assert_eq!(first_load.source, RecoverySource::Primary);
-        assert_eq!(std::fs::read(&paths.pre_migration).unwrap(), first_legacy);
+        assert_eq!(
+            std::fs::read(&paths.pre_migration_v1).unwrap(),
+            first_legacy
+        );
 
         std::fs::write(&paths.primary, second_legacy).unwrap();
         let second_load = load_state(&paths).unwrap();
         assert_eq!(second_load.source, RecoverySource::Primary);
-        assert_eq!(std::fs::read(&paths.pre_migration).unwrap(), first_legacy);
+        assert_eq!(
+            std::fs::read(&paths.pre_migration_v1).unwrap(),
+            first_legacy
+        );
     }
 
     #[test]
@@ -1107,13 +1426,13 @@ mod tests {
             let (_dir, paths) = test_paths(label);
             let legacy = include_bytes!("../tests/fixtures/progress_v1.json");
             std::fs::write(&paths.primary, legacy).unwrap();
-            std::fs::write(&paths.pre_migration, invalid_snapshot).unwrap();
+            std::fs::write(&paths.pre_migration_v1, invalid_snapshot).unwrap();
 
             let error = load_state(&paths).unwrap_err();
 
             assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
             assert_eq!(
-                std::fs::read(&paths.pre_migration).unwrap(),
+                std::fs::read(&paths.pre_migration_v1).unwrap(),
                 invalid_snapshot
             );
         }
@@ -1125,13 +1444,13 @@ mod tests {
         let legacy = include_bytes!("../tests/fixtures/progress_v1.json");
         let versioned_snapshot = encode_state(&state_with_rank(3)).unwrap();
         std::fs::write(&paths.primary, legacy).unwrap();
-        std::fs::write(&paths.pre_migration, &versioned_snapshot).unwrap();
+        std::fs::write(&paths.pre_migration_v1, &versioned_snapshot).unwrap();
 
         let error = load_state(&paths).unwrap_err();
 
         assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
         assert_eq!(
-            std::fs::read(&paths.pre_migration).unwrap(),
+            std::fs::read(&paths.pre_migration_v1).unwrap(),
             versioned_snapshot
         );
     }
@@ -1140,13 +1459,13 @@ mod tests {
     fn versioned_pre_migration_snapshot_is_not_a_recovery_source() {
         let (_dir, paths) = test_paths("versioned-snapshot-recovery");
         let versioned_snapshot = encode_state(&state_with_rank(3)).unwrap();
-        std::fs::write(&paths.pre_migration, &versioned_snapshot).unwrap();
+        std::fs::write(&paths.pre_migration_v1, &versioned_snapshot).unwrap();
 
         let error = load_state(&paths).unwrap_err();
 
         assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
         assert_eq!(
-            std::fs::read(&paths.pre_migration).unwrap(),
+            std::fs::read(&paths.pre_migration_v1).unwrap(),
             versioned_snapshot
         );
     }
@@ -1165,17 +1484,22 @@ mod tests {
         let loaded = load_state(&paths).unwrap();
 
         assert_eq!(loaded.source, RecoverySource::Primary);
-        assert_eq!(std::fs::read(&paths.pre_migration).unwrap(), legacy);
+        assert_eq!(std::fs::read(&paths.pre_migration_v1).unwrap(), legacy);
     }
 
     #[test]
     fn malformed_snapshot_input_is_not_published() {
         let (_dir, paths) = test_paths("malformed-snapshot-input");
 
-        let error = super::write_legacy_snapshot(&paths.pre_migration, b"{").unwrap_err();
+        let error = super::write_immutable_snapshot(
+            &paths.pre_migration_v1,
+            b"{",
+            super::SnapshotSchema::V1,
+        )
+        .unwrap_err();
 
         assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
-        assert!(!paths.pre_migration.exists());
+        assert!(!paths.pre_migration_v1.exists());
     }
 
     #[test]
@@ -1184,7 +1508,7 @@ mod tests {
         std::fs::write(&paths.primary, encode_state(&state_with_rank(3)).unwrap()).unwrap();
         std::fs::write(&paths.backup, encode_state(&state_with_rank(4)).unwrap()).unwrap();
         std::fs::write(
-            &paths.pre_migration,
+            &paths.pre_migration_v1,
             encode_state(&state_with_rank(5)).unwrap(),
         )
         .unwrap();
@@ -1200,7 +1524,7 @@ mod tests {
         let (_dir, paths) = test_paths("backup-precedence");
         std::fs::write(&paths.backup, encode_state(&state_with_rank(4)).unwrap()).unwrap();
         std::fs::write(
-            &paths.pre_migration,
+            &paths.pre_migration_v1,
             encode_state(&state_with_rank(5)).unwrap(),
         )
         .unwrap();
@@ -1212,7 +1536,7 @@ mod tests {
     }
 
     #[test]
-    fn legacy_backup_is_snapshotted_before_primary_repair() {
+    fn legacy_backup_is_snapshotted_without_publishing_v3() {
         let (_dir, paths) = test_paths("legacy-backup");
         let legacy = include_bytes!("../tests/fixtures/progress_v1.json");
         std::fs::write(&paths.primary, b"invalid primary").unwrap();
@@ -1221,9 +1545,10 @@ mod tests {
         let loaded = load_state(&paths).unwrap();
 
         assert_eq!(loaded.source, RecoverySource::Backup);
-        assert_eq!(loaded.state, fixture_state());
-        assert_eq!(std::fs::read(&paths.pre_migration).unwrap(), legacy);
-        assert_eq!(load_exact(&paths.primary).unwrap(), fixture_state());
+        assert_eq!(loaded.state, ProgressState::default());
+        assert!(loaded.needs_output_rebuild);
+        assert_eq!(std::fs::read(&paths.pre_migration_v1).unwrap(), legacy);
+        assert_eq!(std::fs::read(&paths.primary).unwrap(), b"invalid primary");
         assert_eq!(std::fs::read(&paths.backup).unwrap(), legacy);
     }
 
@@ -1233,39 +1558,40 @@ mod tests {
         std::fs::write(&paths.primary, b"invalid primary").unwrap();
         std::fs::write(&paths.backup, b"invalid backup").unwrap();
         let snapshot = include_bytes!("../tests/fixtures/progress_v1.json");
-        std::fs::write(&paths.pre_migration, snapshot).unwrap();
+        std::fs::write(&paths.pre_migration_v1, snapshot).unwrap();
 
         let loaded = load_state(&paths).unwrap();
 
         assert_eq!(loaded.source, RecoverySource::PreMigration);
-        assert_eq!(loaded.state, fixture_state());
-        assert_eq!(load_exact(&paths.primary).unwrap(), fixture_state());
+        assert_eq!(loaded.state, ProgressState::default());
+        assert!(loaded.needs_output_rebuild);
+        assert_eq!(std::fs::read(&paths.primary).unwrap(), b"invalid primary");
         assert_eq!(std::fs::read(&paths.backup).unwrap(), b"invalid backup");
     }
 
     #[test]
-    fn snapshot_recovery_repairs_only_the_invalid_primary() {
+    fn snapshot_recovery_preserves_all_candidates_until_rebuild() {
         let (_dir, paths) = test_paths("candidate-preservation");
         let invalid_backup = b"{\"schema_version\":2}";
         let snapshot = include_bytes!("../tests/fixtures/progress_v1.json");
         std::fs::write(&paths.primary, b"invalid primary").unwrap();
         std::fs::write(&paths.backup, invalid_backup).unwrap();
-        std::fs::write(&paths.pre_migration, snapshot).unwrap();
+        std::fs::write(&paths.pre_migration_v1, snapshot).unwrap();
 
-        load_state(&paths).unwrap();
+        let loaded = load_state(&paths).unwrap();
 
-        assert_eq!(load_exact(&paths.primary).unwrap(), fixture_state());
+        assert!(loaded.needs_output_rebuild);
+        assert_eq!(std::fs::read(&paths.primary).unwrap(), b"invalid primary");
         assert_eq!(std::fs::read(&paths.backup).unwrap(), invalid_backup);
-        assert_eq!(std::fs::read(&paths.pre_migration).unwrap(), snapshot);
+        assert_eq!(std::fs::read(&paths.pre_migration_v1).unwrap(), snapshot);
     }
 
     #[test]
     fn incomplete_v2_primary_recovers_complete_backup_without_snapshot_or_backup_rotation() {
         let (_dir, paths) = test_paths("incomplete-v2-primary");
-        let mut damaged = serde_json::to_value(ProgressEnvelope {
-            schema_version: SCHEMA_VERSION,
-            state: state_with_rank(3),
-        })
+        let mut damaged = serde_json::from_slice::<serde_json::Value>(include_bytes!(
+            "../tests/fixtures/progress_v2.json"
+        ))
         .unwrap();
         damaged["state"]["tally"]
             .as_object_mut()
@@ -1279,7 +1605,7 @@ mod tests {
 
         assert_eq!(loaded.source, RecoverySource::Backup);
         assert_eq!(loaded.state, state_with_rank(7));
-        assert!(!paths.pre_migration.exists());
+        assert!(!paths.pre_migration_v2.exists());
         assert_eq!(std::fs::read(&paths.backup).unwrap(), backup);
     }
 
@@ -1302,7 +1628,7 @@ mod tests {
 
         assert_eq!(loaded.source, RecoverySource::Backup);
         assert_eq!(loaded.state, state_with_rank(7));
-        assert!(!paths.pre_migration.exists());
+        assert!(!paths.pre_migration_v1.exists());
         assert_eq!(std::fs::read(&paths.backup).unwrap(), backup);
     }
 
@@ -1354,72 +1680,63 @@ mod tests {
         let target = dir.0.join("snapshot-target.json");
         std::fs::write(&paths.primary, legacy).unwrap();
         std::fs::write(&target, legacy).unwrap();
-        symlink(&target, &paths.pre_migration).unwrap();
+        symlink(&target, &paths.pre_migration_v1).unwrap();
 
         let error = load_state(&paths).unwrap_err();
 
         assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
         assert_eq!(std::fs::read(&target).unwrap(), legacy);
-        assert!(std::fs::symlink_metadata(&paths.pre_migration)
+        assert!(std::fs::symlink_metadata(&paths.pre_migration_v1)
             .unwrap()
             .file_type()
             .is_symlink());
     }
 
     #[test]
-    fn migrates_current_unversioned_state_without_changing_progress() {
+    fn valid_unversioned_state_requires_output_rebuild() {
         let bytes = include_bytes!("../tests/fixtures/progress_v1.json");
-        let (state, migrated) = decode_state(bytes).unwrap();
-        assert!(migrated);
-        assert_eq!((state.rank, state.prestige), (8, 7));
-        assert_eq!(state.prestige_token_floor, 123456);
-        assert!(state.initialized);
-        assert_eq!(state.tally.total_tokens, 987654321);
-        assert_eq!(state.tally.claude_offsets["/fixture/claude.jsonl"], 44);
-        assert_eq!(state.tally.codex_offsets["/fixture/codex.jsonl"], 55);
-        assert_eq!(state.tally.codex_totals["/fixture/codex.jsonl"], 66);
-    }
-
-    #[test]
-    fn legacy_state_without_initialized_is_treated_as_initialized() {
-        let bytes = include_bytes!("../tests/fixtures/progress_v1_early.json");
-        let (state, migrated) = decode_state(bytes).unwrap();
-        assert!(migrated);
-        assert!(state.initialized);
-        assert_eq!((state.rank, state.prestige), (5, 2));
         assert_eq!(
-            state.tally.claude_offsets["/fixture/early-claude.jsonl"],
-            11
+            decode_state(bytes).unwrap(),
+            DecodedState::NeedsOutputRebuild { source_schema: 1 }
         );
-        assert!(state.tally.codex_offsets.is_empty());
-        assert!(state.tally.codex_totals.is_empty());
     }
 
     #[test]
-    fn legacy_state_with_initialized_false_is_treated_as_initialized() {
+    fn early_unversioned_state_requires_output_rebuild() {
+        let bytes = include_bytes!("../tests/fixtures/progress_v1_early.json");
+        assert_eq!(
+            decode_state(bytes).unwrap(),
+            DecodedState::NeedsOutputRebuild { source_schema: 1 }
+        );
+    }
+
+    #[test]
+    fn unversioned_initialized_false_state_requires_output_rebuild() {
         let bytes = include_bytes!("../tests/fixtures/progress_v1_initialized_false.json");
-        let (state, migrated) = decode_state(bytes).unwrap();
-        assert!(migrated);
-        assert!(state.initialized);
-        assert_eq!((state.rank, state.prestige), (8, 7));
-        assert_eq!(state.prestige_token_floor, 123456);
-        assert_eq!(state.tally.total_tokens, 987654321);
-        assert_eq!(state.tally.claude_offsets["/fixture/claude.jsonl"], 44);
-        assert_eq!(state.tally.codex_offsets["/fixture/codex.jsonl"], 55);
-        assert_eq!(state.tally.codex_totals["/fixture/codex.jsonl"], 66);
+        assert_eq!(
+            decode_state(bytes).unwrap(),
+            DecodedState::NeedsOutputRebuild { source_schema: 1 }
+        );
     }
 
     #[test]
-    fn version_two_roundtrips_every_field() {
-        let original = fixture_state();
+    fn version_three_roundtrips_output_fields() {
+        let original = output_fixture_state();
         let bytes = encode_state(&original).unwrap();
-        let (decoded, migrated) = decode_state(&bytes).unwrap();
-        assert!(!migrated);
-        assert_eq!(decoded, original);
+        let decoded = decode_state(&bytes).unwrap();
+        assert_eq!(decoded, DecodedState::Current(original));
+        let document = serde_json::from_slice::<serde_json::Value>(&bytes).unwrap();
+        assert_eq!(document["schema_version"], 3);
+        assert!(document["state"]["tally"].get("output_tokens").is_some());
+        assert!(document["state"]["tally"]
+            .get("codex_output_totals")
+            .is_some());
+        assert!(document["state"]["tally"].get("total_tokens").is_none());
+        assert!(document["state"]["tally"].get("codex_totals").is_none());
     }
 
     #[test]
-    fn rejects_v2_without_initialized() {
+    fn rejects_v3_without_initialized() {
         let mut document = serde_json::to_value(ProgressEnvelope {
             schema_version: SCHEMA_VERSION,
             state: fixture_state(),
@@ -1436,7 +1753,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_v2_without_total_tokens() {
+    fn rejects_v3_without_output_tokens() {
         let mut document = serde_json::to_value(ProgressEnvelope {
             schema_version: SCHEMA_VERSION,
             state: fixture_state(),
@@ -1445,7 +1762,7 @@ mod tests {
         document["state"]["tally"]
             .as_object_mut()
             .unwrap()
-            .remove("total_tokens");
+            .remove("output_tokens");
 
         let error = decode_state(&serde_json::to_vec(&document).unwrap()).unwrap_err();
 
@@ -1453,7 +1770,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_v2_without_claude_offsets() {
+    fn rejects_v3_without_claude_offsets() {
         let mut document = serde_json::to_value(ProgressEnvelope {
             schema_version: SCHEMA_VERSION,
             state: fixture_state(),
@@ -1470,7 +1787,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_v2_without_codex_offsets() {
+    fn rejects_v3_without_codex_offsets() {
         let mut document = serde_json::to_value(ProgressEnvelope {
             schema_version: SCHEMA_VERSION,
             state: fixture_state(),
@@ -1487,7 +1804,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_v2_without_codex_totals() {
+    fn rejects_v3_without_codex_output_totals() {
         let mut document = serde_json::to_value(ProgressEnvelope {
             schema_version: SCHEMA_VERSION,
             state: fixture_state(),
@@ -1496,11 +1813,37 @@ mod tests {
         document["state"]["tally"]
             .as_object_mut()
             .unwrap()
-            .remove("codex_totals");
+            .remove("codex_output_totals");
 
         let error = decode_state(&serde_json::to_vec(&document).unwrap()).unwrap_err();
 
         assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn rejects_v2_with_any_required_field_missing() {
+        for path in [
+            &["state", "initialized"][..],
+            &["state", "tally", "total_tokens"][..],
+            &["state", "tally", "claude_offsets"][..],
+            &["state", "tally", "codex_offsets"][..],
+            &["state", "tally", "codex_totals"][..],
+        ] {
+            let mut document = serde_json::from_slice::<serde_json::Value>(include_bytes!(
+                "../tests/fixtures/progress_v2.json"
+            ))
+            .unwrap();
+            let (field, parents) = path.split_last().unwrap();
+            let mut parent = &mut document;
+            for key in parents {
+                parent = &mut parent[*key];
+            }
+            parent.as_object_mut().unwrap().remove(*field);
+
+            let error = decode_state(&serde_json::to_vec(&document).unwrap()).unwrap_err();
+
+            assert_eq!(error.kind(), std::io::ErrorKind::InvalidData, "{path:?}");
+        }
     }
 
     #[test]
@@ -1547,6 +1890,19 @@ mod tests {
             br#"{"schema_version":99,"rank":8,"prestige":7,"prestige_token_floor":123456,"initialized":true,"tally":{}}"#,
         )
         .unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+    }
+
+    #[test]
+    fn rejects_unversioned_shape_with_non_numeric_schema_version() {
+        let mut document = serde_json::from_slice::<serde_json::Value>(include_bytes!(
+            "../tests/fixtures/progress_v1.json"
+        ))
+        .unwrap();
+        document["schema_version"] = "future".into();
+
+        let error = decode_state(&serde_json::to_vec(&document).unwrap()).unwrap_err();
+
         assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
     }
 
@@ -1669,11 +2025,15 @@ mod tests {
         let live_primary = super::live_primary_path();
         let source = validate_external_v1_fixture(&source, live_primary.as_deref()).unwrap();
         let bytes = std::fs::read(source).unwrap();
-        let (before, _) = decode_state(&bytes).unwrap();
+        assert_eq!(
+            decode_state(&bytes).unwrap(),
+            DecodedState::NeedsOutputRebuild { source_schema: 1 }
+        );
         let (_dir, paths) = test_paths("external-migration");
         std::fs::write(&paths.primary, bytes).unwrap();
-        let after = load_state(&paths).unwrap().state;
-        assert_eq!(after, before);
-        assert!(paths.pre_migration.exists());
+        let loaded = load_state(&paths).unwrap();
+        assert_eq!(loaded.state, ProgressState::default());
+        assert!(loaded.needs_output_rebuild);
+        assert!(paths.pre_migration_v1.exists());
     }
 }

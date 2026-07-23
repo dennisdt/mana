@@ -69,10 +69,10 @@ pub fn prestige_eligible(rank: usize) -> bool {
 /// carry running totals, not deltas).
 #[derive(Debug, Default, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct TallyState {
-    pub total_tokens: u64,
+    pub output_tokens: u64,
     pub claude_offsets: std::collections::HashMap<String, u64>, // path -> consumed byte offset
     pub codex_offsets: std::collections::HashMap<String, u64>,
-    pub codex_totals: std::collections::HashMap<String, u64>, // path -> last cumulative output total
+    pub codex_output_totals: std::collections::HashMap<String, u64>, // path -> last cumulative output total
 }
 
 /// All `*.jsonl` files under `dir`, found with a manual stack — a handful of
@@ -139,7 +139,7 @@ pub fn scan_claude_dir(dir: &std::path::Path, state: &mut TallyState) {
             continue;
         };
         let added: u64 = text.lines().map(claude_line_output_tokens).sum();
-        state.total_tokens = state.total_tokens.saturating_add(added);
+        state.output_tokens = state.output_tokens.saturating_add(added);
         state.claude_offsets.insert(key, new_offset);
     }
 }
@@ -177,13 +177,13 @@ pub fn scan_codex_dir(dir: &std::path::Path, state: &mut TallyState) {
         let Some(latest) = text.lines().rev().find_map(codex_line_output_total) else {
             continue;
         };
-        let stored = state.codex_totals.get(&key).copied().unwrap_or(0);
+        let stored = state.codex_output_totals.get(&key).copied().unwrap_or(0);
         if latest > stored {
-            state.total_tokens = state.total_tokens.saturating_add(latest - stored);
+            state.output_tokens = state.output_tokens.saturating_add(latest - stored);
         }
         // A latest below the stored total means truncation/rotation: resync
         // the baseline without counting anything.
-        state.codex_totals.insert(key, latest);
+        state.codex_output_totals.insert(key, latest);
     }
 }
 
@@ -237,7 +237,7 @@ where
 fn effective_xp(state: &ProgressState) -> u64 {
     state
         .tally
-        .total_tokens
+        .output_tokens
         .saturating_sub(state.prestige_token_floor)
         / TOKENS_PER_XP
 }
@@ -248,7 +248,7 @@ pub fn progress_view(state: &ProgressState) -> Progress {
     let floor = xp_for_level(level, state.prestige);
     let needed = xp_for_level(level + 1, state.prestige).saturating_sub(floor);
     Progress {
-        lifetime_output_tokens: state.tally.total_tokens,
+        lifetime_output_tokens: state.tally.output_tokens,
         xp,
         level,
         rank: state.rank,
@@ -268,7 +268,7 @@ pub fn recalculate_from_output_history(state: &mut ProgressState) {
     let mut floor = 0u64;
     loop {
         let cost = prestige_cycle_token_cost(prestige);
-        let remaining = state.tally.total_tokens.saturating_sub(floor);
+        let remaining = state.tally.output_tokens.saturating_sub(floor);
         if cost == 0 || remaining < cost {
             break;
         }
@@ -306,7 +306,7 @@ pub fn try_rank_up(state: &mut ProgressState) -> Result<(), String> {
 pub fn initialize_baseline(state: &mut ProgressState) {
     state.rank = 0;
     state.prestige = 0;
-    state.prestige_token_floor = state.tally.total_tokens;
+    state.prestige_token_floor = state.tally.output_tokens;
     state.initialized = true;
 }
 
@@ -319,7 +319,7 @@ pub fn try_prestige(state: &mut ProgressState) -> Result<(), String> {
     let cost = prestige_cycle_token_cost(state.prestige);
     let effective_output = state
         .tally
-        .total_tokens
+        .output_tokens
         .saturating_sub(state.prestige_token_floor);
     if effective_output < cost {
         return Err("prestige requires the complete current cycle".into());
@@ -549,9 +549,9 @@ mod tests {
         write(&file, &format!("{CLAUDE_LINE}\nnot json\n{CLAUDE_LINE}\n"));
         let mut state = TallyState::default();
         scan_claude_dir(&dir, &mut state);
-        assert_eq!(state.total_tokens, 200);
+        assert_eq!(state.output_tokens, 200);
         scan_claude_dir(&dir, &mut state);
-        assert_eq!(state.total_tokens, 200);
+        assert_eq!(state.output_tokens, 200);
         // an appended line adds only the delta, and a trailing partial line is not consumed
         let mut f = std::fs::OpenOptions::new()
             .append(true)
@@ -560,7 +560,7 @@ mod tests {
         use std::io::Write as _;
         write!(f, "{CLAUDE_LINE}\n{{\"partial").unwrap();
         scan_claude_dir(&dir, &mut state);
-        assert_eq!(state.total_tokens, 300);
+        assert_eq!(state.output_tokens, 300);
         let stored = *state.claude_offsets.values().next().unwrap();
         assert!(stored < std::fs::metadata(&file).unwrap().len());
     }
@@ -572,9 +572,9 @@ mod tests {
         write(&file, &format!("{CODEX_EVENT}\n"));
         let mut state = TallyState::default();
         scan_codex_dir(&dir, &mut state);
-        assert_eq!(state.total_tokens, 7);
+        assert_eq!(state.output_tokens, 7);
         scan_codex_dir(&dir, &mut state);
-        assert_eq!(state.total_tokens, 7);
+        assert_eq!(state.output_tokens, 7);
         let appended = CODEX_EVENT
             .replace("\"output_tokens\":3", "\"output_tokens\":30")
             .replace(
@@ -583,7 +583,7 @@ mod tests {
             );
         append_line(&file, &appended);
         scan_codex_dir(&dir, &mut state);
-        assert_eq!(state.total_tokens, 50);
+        assert_eq!(state.output_tokens, 50);
     }
 
     #[test]
@@ -600,7 +600,7 @@ mod tests {
         );
         let mut claude = TallyState::default();
         scan_claude_dir(&claude_dir, &mut claude);
-        assert_eq!(claude.total_tokens, 0);
+        assert_eq!(claude.output_tokens, 0);
 
         let codex_dir = tally_test_dir("codex-invalid");
         write(
@@ -613,7 +613,7 @@ mod tests {
         );
         let mut codex = TallyState::default();
         scan_codex_dir(&codex_dir, &mut codex);
-        assert_eq!(codex.total_tokens, 0);
+        assert_eq!(codex.output_tokens, 0);
     }
 
     fn state_with(tokens: u64, rank: usize, prestige: u32, floor: u64) -> ProgressState {
@@ -623,7 +623,7 @@ mod tests {
             prestige_token_floor: floor,
             initialized: true,
             tally: TallyState {
-                total_tokens: tokens,
+                output_tokens: tokens,
                 ..Default::default()
             },
         }
@@ -671,11 +671,14 @@ mod tests {
             .tally
             .codex_offsets
             .insert("codex.jsonl".into(), 456);
-        current.tally.codex_totals.insert("codex.jsonl".into(), 789);
+        current
+            .tally
+            .codex_output_totals
+            .insert("codex.jsonl".into(), 789);
         let before = current.clone();
         let mut candidate = current.clone();
         try_rank_up(&mut candidate).unwrap();
-        candidate.tally.total_tokens += 42;
+        candidate.tally.output_tokens += 42;
         candidate
             .tally
             .claude_offsets
@@ -692,7 +695,7 @@ mod tests {
         let mut current = state_with(1_000, 0, 0, 0);
         let old_view = progress_view(&current);
         let mut candidate = current.clone();
-        candidate.tally.total_tokens += 42;
+        candidate.tally.output_tokens += 42;
         candidate
             .tally
             .claude_offsets
@@ -733,7 +736,7 @@ mod tests {
 
         scan_progress_dirs(&claude_dir, &codex_dir, &mut candidate);
 
-        assert_eq!(candidate.tally.total_tokens, first + second + third + 100);
+        assert_eq!(candidate.tally.output_tokens, first + second + third + 100);
         assert_eq!(
             (
                 candidate.rank,
@@ -841,9 +844,9 @@ mod tests {
         write(&file, &format!("{CODEX_EVENT}\n"));
         let key = file.to_string_lossy().into_owned();
         let mut state = TallyState::default();
-        state.codex_totals.insert(key.clone(), 50000);
+        state.codex_output_totals.insert(key.clone(), 50000);
         scan_codex_dir(&dir, &mut state);
-        assert_eq!(state.total_tokens, 0); // truncated/rotated file: never double-count
-        assert_eq!(state.codex_totals[&key], 7); // baseline resynced
+        assert_eq!(state.output_tokens, 0); // truncated/rotated file: never double-count
+        assert_eq!(state.codex_output_totals[&key], 7); // baseline resynced
     }
 }
