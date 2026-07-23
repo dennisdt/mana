@@ -820,7 +820,6 @@ git commit -m "feat: show one exact prestige footer"
 **Files:**
 - Create: `scripts/normalize_prestige_corners.py`
 - Create: `scripts/test_normalize_prestige_corners.py`
-- Modify: `src/generated-assets.test.ts`
 
 **Interfaces:**
 - Produces:
@@ -897,7 +896,45 @@ Normalize the visible source with nearest-neighbor resampling into a `96x96` can
 
 Stage by copying the existing complete prestige directory, replace only its four corner PNGs, validate all staged files, then atomically swap the staged directory using the rollback pattern already implemented in `normalize_frame_art.py`.
 
-- [ ] **Step 4: Strengthen production bitmap gates**
+- [ ] **Step 4: Run tooling tests**
+
+Run:
+
+```bash
+python3 -m unittest scripts/test_normalize_prestige_corners.py -v
+```
+
+Expected: all focused corner-normalizer tests PASS.
+
+- [ ] **Step 5: Commit green tooling**
+
+```bash
+git add scripts/normalize_prestige_corners.py scripts/test_normalize_prestige_corners.py
+git commit -m "feat: normalize connected prestige corners"
+```
+
+---
+
+### Task 6: Generate Prestige I-X Connected Corners
+
+**Files:**
+- Modify: `src/generated-assets.test.ts`
+- Replace: `public/frames/prestige/1/corner-*.png`
+- Replace: `public/frames/prestige/2/corner-*.png`
+- Replace: `public/frames/prestige/3/corner-*.png`
+- Replace: `public/frames/prestige/4/corner-*.png`
+- Replace: `public/frames/prestige/5/corner-*.png`
+- Replace: `public/frames/prestige/6/corner-*.png`
+- Replace: `public/frames/prestige/7/corner-*.png`
+- Replace: `public/frames/prestige/8/corner-*.png`
+- Replace: `public/frames/prestige/9/corner-*.png`
+- Replace: `public/frames/prestige/10/corner-*.png`
+
+**Interfaces:**
+- Consumes: the existing same-level `rail-h.png`, `rail-v.png`, and `crest-top.png` as visual references.
+- Produces: ten canonical generated top-left joints plus thirty deterministic reflections satisfying Task 5.
+
+- [ ] **Step 1: Add the failing production bitmap gate**
 
 In `generated-assets.test.ts`, stop requiring all four edges of prestige corners to be transparent. For each Prestige I-X assert:
 
@@ -958,45 +995,17 @@ expect(bottomRight.pixels).toEqual(reflectPixels(topLeft, true, true));
 
 Rank-corner gates remain unchanged.
 
-- [ ] **Step 5: Run tooling tests**
+- [ ] **Step 2: Run the production gate to verify RED**
 
 Run:
 
 ```bash
-python3 -m unittest scripts/test_normalize_prestige_corners.py -v
 npx vitest run src/generated-assets.test.ts
 ```
 
-Expected: Python tests PASS; the production asset test remains RED only because old prestige corners fail the new socket/reflection contract.
+Expected: FAIL because the old prestige corners do not satisfy the connected socket/reflection contract.
 
-- [ ] **Step 6: Commit tooling and failing production gate**
-
-```bash
-git add scripts/normalize_prestige_corners.py scripts/test_normalize_prestige_corners.py src/generated-assets.test.ts
-git commit -m "test: require connected prestige corners"
-```
-
----
-
-### Task 6: Generate Prestige I-X Connected Corners
-
-**Files:**
-- Replace: `public/frames/prestige/1/corner-*.png`
-- Replace: `public/frames/prestige/2/corner-*.png`
-- Replace: `public/frames/prestige/3/corner-*.png`
-- Replace: `public/frames/prestige/4/corner-*.png`
-- Replace: `public/frames/prestige/5/corner-*.png`
-- Replace: `public/frames/prestige/6/corner-*.png`
-- Replace: `public/frames/prestige/7/corner-*.png`
-- Replace: `public/frames/prestige/8/corner-*.png`
-- Replace: `public/frames/prestige/9/corner-*.png`
-- Replace: `public/frames/prestige/10/corner-*.png`
-
-**Interfaces:**
-- Consumes: the existing same-level `rail-h.png`, `rail-v.png`, and `crest-top.png` as visual references.
-- Produces: ten canonical generated top-left joints plus thirty deterministic reflections satisfying Task 5.
-
-- [ ] **Step 1: Inspect the current material references**
+- [ ] **Step 3: Inspect the current material references**
 
 For each prestige directory, make a temporary reference strip containing its horizontal rail, vertical rail, and crest. Inspect Prestige I, IV, VII, IX, and X strips with `view_image` before generation so prompts preserve their material and escalation.
 
@@ -1021,7 +1030,7 @@ for level in range(1, 11):
 PY
 ```
 
-- [ ] **Step 2: Generate one canonical top-left corner per prestige with built-in GPT Image 2**
+- [ ] **Step 4: Generate one canonical top-left corner per prestige with built-in GPT Image 2**
 
 Issue one built-in `image_gen` call per prestige using the same-level strip as a reference and this exact base prompt:
 
@@ -1047,7 +1056,7 @@ Tier additions:
 
 Copy each selected generated source into `tmp/generated/prestige-corners/<n>-source.png`.
 
-- [ ] **Step 3: Remove chroma and normalize each canonical corner**
+- [ ] **Step 5: Remove chroma and normalize each canonical corner**
 
 For every level:
 
@@ -1066,7 +1075,7 @@ python3 scripts/normalize_prestige_corners.py \
 
 Repeat through Prestige X. If chroma fringe remains, retry that source once with `--edge-contract 1`. If either socket validator fails, regenerate that prestige rather than drawing a code-native substitute.
 
-- [ ] **Step 4: Run bitmap gates and inspect a corner contact sheet**
+- [ ] **Step 6: Run bitmap gates and inspect a corner contact sheet**
 
 Run:
 
@@ -1098,10 +1107,10 @@ sheet.save("tmp/generated/prestige-corners/contact-sheet.png")
 PY
 ```
 
-- [ ] **Step 5: Commit production corners**
+- [ ] **Step 7: Commit the green production gate and corners**
 
 ```bash
-git add public/frames/prestige
+git add src/generated-assets.test.ts public/frames/prestige
 git commit -m "feat: add connected generated prestige corners"
 ```
 
