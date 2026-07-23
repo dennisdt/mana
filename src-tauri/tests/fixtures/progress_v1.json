@@ -1,0 +1,12 @@
+{
+  "rank": 8,
+  "prestige": 7,
+  "prestige_token_floor": 123456,
+  "initialized": true,
+  "tally": {
+    "total_tokens": 987654321,
+    "claude_offsets": {"/fixture/claude.jsonl": 44},
+    "codex_offsets": {"/fixture/codex.jsonl": 55},
+    "codex_totals": {"/fixture/codex.jsonl": 66}
+  }
+}

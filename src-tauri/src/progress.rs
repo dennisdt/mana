@@ -53,6 +53,7 @@ pub fn prestige_eligible(rank: usize) -> bool {
 /// seen cumulative totals for Codex sessions (whose `token_count` events
 /// carry running totals, not deltas).
 #[derive(Debug, Default, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
 pub struct TallyState {
     pub total_tokens: u64,
     pub claude_offsets: std::collections::HashMap<String, u64>, // path -> consumed byte offset

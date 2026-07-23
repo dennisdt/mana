@@ -1,0 +1,9 @@
+{
+  "rank": 5,
+  "prestige": 2,
+  "prestige_token_floor": 7,
+  "tally": {
+    "total_tokens": 42,
+    "claude_offsets": {"/fixture/early-claude.jsonl": 11}
+  }
+}
