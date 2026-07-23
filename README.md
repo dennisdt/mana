@@ -4,13 +4,16 @@ An always-on-top macOS widget that turns Claude Code and Codex usage limits into
 
 ![Mana widget showing Claude and Codex usage bars](docs/images/mana-widget.png)
 
-Mana lives in the menu bar and keeps its expanded party roster available at a glance. Each authenticated provider gets an animated elemental familiar, equal-length usage meters, and complete reset times. Providers you have not authenticated stay hidden.
+Mana lives in the menu bar and keeps its expanded party roster available at a glance. Each authenticated provider gets an animated elemental familiar, equal-length usage meters, and complete reset times. Providers you have not authenticated stay hidden. Usage builds local XP, ranks, and prestige without sending progression data anywhere.
 
 ## Features
 
 - Claude Code session, weekly, and model-specific limits
 - Codex weekly subscription usage
-- Animated fire/poison and ice/lightning familiars
+- Generated pixel-art outer frames for every rank
+- Prestige I-X frames with the highest-earned prestige crest
+- Rank-scaled fire/poison and ice/lightning familiar auras
+- Update-safe local levels, ranks, prestige, and XP progression
 - Local CLI activity indicators
 - Smooth, equal-length mana meters with reset times
 - Automatic stale-data handling during temporary API failures
@@ -48,6 +51,7 @@ If a provider request temporarily fails, Mana keeps the last successful values v
 ## Privacy And Security
 
 - Credential access is read-only.
+- Progress is stored locally using migration-safe, atomic saves and remains in place across normal app updates.
 - Mana re-reads credentials for each poll and never writes or refreshes them.
 - Token values are never logged, persisted, or included in widget content.
 - Provider credentials are sent only to that provider's usage endpoint over HTTPS.
@@ -80,6 +84,14 @@ cargo test --manifest-path src-tauri/Cargo.toml
 ```
 
 The frontend uses TypeScript and CSS inside a Tauri 2 shell. Native polling, credential access, menu-bar behavior, and session-write activity detection are implemented in Rust.
+
+To inspect the visual progression without launching Tauri or reading local credentials, run `npm run dev` and open:
+
+```text
+http://127.0.0.1:1420/preview.html?rank=godlike&prestige=10&providers=both
+```
+
+The preview accepts every rank name, `prestige=0` through `10`, `providers=claude|codex|both`, and `motion=reduced` for deterministic screenshots. It uses fixed usage data and never reads or changes saved progress.
 
 ## Known Limitations
 

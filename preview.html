@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="/src/styles.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mana Visual Preview</title>
+    <style>
+      html,
+      body {
+        width: 504px;
+        min-width: 504px;
+        min-height: 1px;
+        background: #090b14;
+      }
+
+      #root[data-preview-reduced="true"] .fill::before,
+      #root[data-preview-reduced="true"] #progress .xpfill::before,
+      #root[data-preview-reduced="true"] #progress .xpfill::after,
+      #root[data-preview-reduced="true"] .frame-rail::after,
+      #root[data-preview-reduced="true"] .frame-corner::after {
+        animation: none !important;
+      }
+    </style>
+    <script type="module" src="/src/preview.ts" defer></script>
+  </head>
+  <body id="preview-root">
+    <div id="root">
+      <div id="glass">
+        <div id="content">
+          <div id="card">
+            <section id="card-claude" class="provider-card claude"></section>
+            <section id="card-codex" class="provider-card codex"></section>
+          </div>
+          <div id="progress">
+            <span class="level"></span>
+            <div class="xpbar"><div class="xpfill"></div></div>
+          </div>
+        </div>
+      </div>
+      <div id="perimeter" aria-hidden="true"></div>
+    </div>
+  </body>
+</html>
