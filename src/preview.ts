@@ -7,7 +7,11 @@ import {
 } from "./frame-renderer";
 import { manaLeft, planLabel } from "./format";
 import { RANK_TIERS, type RankTier } from "./frame-assets";
-import { romanNumeral, tierDisplayName } from "./progress-view";
+import {
+  levelLabel,
+  lifetimeOutputLabel,
+  type Progress,
+} from "./progress-view";
 import {
   spriteFrameAt,
   spriteFrameDelayAt,
@@ -23,6 +27,8 @@ export type PreviewOptions = {
   prestige: number;
   providers: PreviewProviders;
   reducedMotion: boolean;
+  outputTokens: string;
+  hovering: boolean;
 };
 
 const DEFAULT_OPTIONS: PreviewOptions = Object.freeze({
@@ -30,7 +36,12 @@ const DEFAULT_OPTIONS: PreviewOptions = Object.freeze({
   prestige: 10,
   providers: "both",
   reducedMotion: false,
+  outputTokens: "12345678",
+  hovering: false,
 });
+
+const U64_MAX = 18_446_744_073_709_551_615n;
+const UNSIGNED_DECIMAL = /^(?:0|[1-9][0-9]*)$/;
 
 const PREVIEW_LEVELS: Readonly<Record<RankTier, number>> = Object.freeze({
   naked: 1,
@@ -53,6 +64,18 @@ const RESET_LABELS: Readonly<Record<Provider, readonly string[]>> = Object.freez
   claude: Object.freeze([" · 1h 21m", " · Tue 1:59 PM", " · Tue 1:59 PM"]),
   codex: Object.freeze([" · Wed 2:26 PM"]),
 });
+
+function parseOutputTokens(value: string | null): string {
+  if (value === null || !UNSIGNED_DECIMAL.test(value)) {
+    return DEFAULT_OPTIONS.outputTokens;
+  }
+
+  try {
+    return BigInt(value) <= U64_MAX ? value : DEFAULT_OPTIONS.outputTokens;
+  } catch {
+    return DEFAULT_OPTIONS.outputTokens;
+  }
+}
 
 export function parsePreviewOptions(params: URLSearchParams): PreviewOptions {
   const requestedRank = params.get("rank")?.trim().toLowerCase() ?? "";
@@ -79,6 +102,8 @@ export function parsePreviewOptions(params: URLSearchParams): PreviewOptions {
     prestige,
     providers,
     reducedMotion: params.get("motion") === "reduced",
+    outputTokens: parseOutputTokens(params.get("outputTokens")),
+    hovering: params.get("hover") === "true",
   };
 }
 
@@ -111,8 +136,27 @@ export function fixedPreviewSnapshot(provider: Provider): Snapshot {
 }
 
 export function previewLevelLabel(tier: RankTier, prestige: number): string {
-  const base = `Lv ${PREVIEW_LEVELS[tier]} · ${tierDisplayName(tier)}`;
-  return prestige > 0 ? `${base} · Prestige ${romanNumeral(prestige)}` : base;
+  return levelLabel(
+    fixedPreviewProgress(tier, prestige, DEFAULT_OPTIONS.outputTokens),
+  );
+}
+
+export function fixedPreviewProgress(
+  tier: RankTier,
+  prestige: number,
+  outputTokens: string,
+): Progress {
+  return {
+    xp: 84,
+    level: PREVIEW_LEVELS[tier],
+    rank: RANK_TIERS.indexOf(tier),
+    tier,
+    prestige,
+    lifetime_output_tokens: outputTokens,
+    rank_up_eligible: false,
+    prestige_eligible: false,
+    level_progress: { current: 84, needed: 100 },
+  };
 }
 
 function populateCard(card: HTMLElement, snapshot: Snapshot): void {
@@ -163,6 +207,45 @@ function sizePreview(root: HTMLElement): void {
   root.style.height = `${height}px`;
   document.documentElement.style.height = `${height}px`;
   document.body.style.height = `${height}px`;
+}
+
+function populateProgressFooter(progress: Progress): void {
+  const footer = document.getElementById("progress");
+  if (!footer) return;
+
+  let crest = footer.querySelector<HTMLElement>(".prestige-crest");
+  if (!crest) {
+    crest = document.createElement("span");
+    crest.className = "prestige-crest";
+    crest.setAttribute("aria-hidden", "true");
+    footer.prepend(crest);
+  }
+
+  let copy = footer.querySelector<HTMLElement>(".progress-copy");
+  if (!copy) {
+    const level = footer.querySelector<HTMLElement>(".level");
+    copy = document.createElement("span");
+    copy.className = "progress-copy";
+    if (level) copy.append(level);
+    footer.insertBefore(copy, footer.querySelector(".xpbar"));
+  }
+
+  let level = copy.querySelector<HTMLElement>(".level");
+  if (!level) {
+    level = document.createElement("span");
+    level.className = "level";
+    copy.append(level);
+  }
+
+  let lifetime = copy.querySelector<HTMLElement>(".lifetime-output");
+  if (!lifetime) {
+    lifetime = document.createElement("span");
+    lifetime.className = "lifetime-output";
+    copy.append(lifetime);
+  }
+
+  level.textContent = levelLabel(progress);
+  lifetime.textContent = lifetimeOutputLabel(progress.lifetime_output_tokens);
 }
 
 function animatePreview(
@@ -222,6 +305,7 @@ export async function mountPreview(options: PreviewOptions): Promise<void> {
 
   root.dataset.rank = options.rank;
   root.dataset.previewReduced = String(options.reducedMotion);
+  root.dataset.hovering = String(options.hovering);
   perimeter.innerHTML = frameLayerHtml();
 
   const activeProviders = visibleProviders(options);
@@ -248,8 +332,9 @@ export async function mountPreview(options: PreviewOptions): Promise<void> {
     if (aura) applyAura(aura, descriptor);
   }
 
-  const level = document.querySelector<HTMLElement>("#progress .level");
-  if (level) level.textContent = previewLevelLabel(options.rank, options.prestige);
+  populateProgressFooter(
+    fixedPreviewProgress(options.rank, options.prestige, options.outputTokens),
+  );
   const xp = document.querySelector<HTMLElement>("#progress .xpfill");
   if (xp) xp.style.width = "84%";
 
