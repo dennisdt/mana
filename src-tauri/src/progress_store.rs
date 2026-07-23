@@ -1,7 +1,9 @@
 use crate::progress::{ProgressState, TallyState, TIERS};
 use std::io::Write;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 pub const SCHEMA_VERSION: u32 = 2;
+static SNAPSHOT_TEMPORARY_ID: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ProgressPaths {
@@ -97,17 +99,117 @@ pub fn decode_state(bytes: &[u8]) -> std::io::Result<(ProgressState, bool)> {
     Ok((validate_rank(state)?, true))
 }
 
+struct TemporarySnapshot(std::path::PathBuf);
+
+impl Drop for TemporarySnapshot {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
+fn validate_snapshot(path: &std::path::Path) -> std::io::Result<Vec<u8>> {
+    let metadata = std::fs::symlink_metadata(path)?;
+    if !metadata.file_type().is_file() {
+        return Err(invalid_data(format!(
+            "legacy snapshot is not a regular file: {}",
+            path.display()
+        )));
+    }
+
+    let bytes = std::fs::read(path)?;
+    decode_state(&bytes)?;
+    Ok(bytes)
+}
+
+fn create_snapshot_temporary(
+    path: &std::path::Path,
+) -> std::io::Result<(TemporarySnapshot, std::fs::File)> {
+    let parent = path.parent().unwrap_or_else(|| std::path::Path::new(""));
+    let file_name = path
+        .file_name()
+        .unwrap_or_else(|| std::ffi::OsStr::new("progress-snapshot"));
+
+    loop {
+        let id = SNAPSHOT_TEMPORARY_ID.fetch_add(1, Ordering::Relaxed);
+        let mut temporary_name = file_name.to_os_string();
+        temporary_name.push(format!(".tmp-{}-{id}", std::process::id()));
+        let temporary_path = parent.join(temporary_name);
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary_path)
+        {
+            Ok(file) => return Ok((TemporarySnapshot(temporary_path), file)),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error),
+        }
+    }
+}
+
+fn sync_parent_directory(path: &std::path::Path) -> std::io::Result<()> {
+    let parent = path.parent().unwrap_or_else(|| std::path::Path::new("."));
+    std::fs::File::open(parent)?.sync_all()
+}
+
 fn write_legacy_snapshot(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
-    let mut file = match std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(path)
-    {
-        Ok(file) => file,
-        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => return Ok(()),
+    let (_, is_legacy) = decode_state(bytes)?;
+    if !is_legacy {
+        return Err(invalid_data(
+            "pre-migration snapshot input is not legacy progress",
+        ));
+    }
+
+    let (temporary, mut file) = create_snapshot_temporary(path)?;
+    file.write_all(bytes)?;
+    file.sync_all()?;
+    drop(file);
+
+    let staged_bytes = std::fs::read(&temporary.0)?;
+    let (_, staged_is_legacy) = decode_state(&staged_bytes)?;
+    if !staged_is_legacy {
+        return Err(invalid_data(
+            "staged pre-migration snapshot is not legacy progress",
+        ));
+    }
+    if staged_bytes != bytes {
+        return Err(invalid_data(
+            "staged pre-migration snapshot differs from legacy progress",
+        ));
+    }
+
+    match std::fs::hard_link(&temporary.0, path) {
+        Ok(()) => {
+            let remove_result = std::fs::remove_file(&temporary.0);
+            let sync_result = sync_parent_directory(path);
+            remove_result?;
+            sync_result
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+            validate_snapshot(path)?;
+            Ok(())
+        }
+        Err(error) => Err(error),
+    }
+}
+
+fn read_candidate(
+    path: &std::path::Path,
+    require_regular_file: bool,
+) -> std::io::Result<Option<Vec<u8>>> {
+    let metadata = match std::fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(error),
     };
-    file.write_all(bytes)
+
+    if require_regular_file && !metadata.file_type().is_file() {
+        return Err(invalid_data(format!(
+            "legacy snapshot is not a regular file: {}",
+            path.display()
+        )));
+    }
+
+    std::fs::read(path).map(Some)
 }
 
 pub fn load_state(paths: &ProgressPaths) -> std::io::Result<LoadOutcome> {
@@ -119,10 +221,9 @@ pub fn load_state(paths: &ProgressPaths) -> std::io::Result<LoadOutcome> {
     let mut invalid_error = None;
 
     for (path, source) in candidates {
-        let bytes = match std::fs::read(path) {
-            Ok(bytes) => bytes,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
-            Err(error) => return Err(error),
+        let bytes = match read_candidate(path, source == RecoverySource::PreMigration)? {
+            Some(bytes) => bytes,
+            None => continue,
         };
 
         match decode_state(&bytes) {
@@ -179,6 +280,12 @@ mod tests {
         serde_json::from_slice(include_bytes!("../tests/fixtures/progress_v1.json")).unwrap()
     }
 
+    fn state_with_rank(rank: usize) -> ProgressState {
+        let mut state = fixture_state();
+        state.rank = rank;
+        state
+    }
+
     #[test]
     fn corrupt_primary_recovers_from_backup() {
         let (dir, paths) = test_paths("backup-recovery");
@@ -209,13 +316,152 @@ mod tests {
     #[test]
     fn legacy_snapshot_is_written_once_and_never_overwritten() {
         let (_dir, paths) = test_paths("immutable-legacy");
-        let legacy = include_bytes!("../tests/fixtures/progress_v1.json");
-        std::fs::write(&paths.primary, legacy).unwrap();
+        let first_legacy = include_bytes!("../tests/fixtures/progress_v1.json");
+        let second_legacy = include_bytes!("../tests/fixtures/progress_v1_early.json");
+
+        std::fs::write(&paths.primary, first_legacy).unwrap();
+        let first_load = load_state(&paths).unwrap();
+        assert_eq!(first_load.source, RecoverySource::Primary);
+        assert_eq!(std::fs::read(&paths.pre_migration).unwrap(), first_legacy);
+
+        std::fs::write(&paths.primary, second_legacy).unwrap();
+        let second_load = load_state(&paths).unwrap();
+        assert_eq!(second_load.source, RecoverySource::Primary);
+        assert_eq!(std::fs::read(&paths.pre_migration).unwrap(), first_legacy);
+    }
+
+    #[test]
+    fn invalid_existing_snapshot_rejects_legacy_primary_without_changing_snapshot() {
+        for (label, invalid_snapshot) in [
+            ("empty-snapshot", &b""[..]),
+            ("partial-snapshot", &br#"{"rank":"#[..]),
+        ] {
+            let (_dir, paths) = test_paths(label);
+            let legacy = include_bytes!("../tests/fixtures/progress_v1.json");
+            std::fs::write(&paths.primary, legacy).unwrap();
+            std::fs::write(&paths.pre_migration, invalid_snapshot).unwrap();
+
+            let error = load_state(&paths).unwrap_err();
+
+            assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+            assert_eq!(
+                std::fs::read(&paths.pre_migration).unwrap(),
+                invalid_snapshot
+            );
+        }
+    }
+
+    #[test]
+    fn malformed_snapshot_input_is_not_published() {
+        let (_dir, paths) = test_paths("malformed-snapshot-input");
+
+        let error = super::write_legacy_snapshot(&paths.pre_migration, b"{").unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+        assert!(!paths.pre_migration.exists());
+    }
+
+    #[test]
+    fn primary_takes_precedence_over_backup_and_snapshot() {
+        let (_dir, paths) = test_paths("primary-precedence");
+        std::fs::write(&paths.primary, encode_state(&state_with_rank(3)).unwrap()).unwrap();
+        std::fs::write(&paths.backup, encode_state(&state_with_rank(4)).unwrap()).unwrap();
+        std::fs::write(
+            &paths.pre_migration,
+            encode_state(&state_with_rank(5)).unwrap(),
+        )
+        .unwrap();
+
+        let loaded = load_state(&paths).unwrap();
+
+        assert_eq!(loaded.source, RecoverySource::Primary);
+        assert_eq!(loaded.state.rank, 3);
+    }
+
+    #[test]
+    fn backup_takes_precedence_over_snapshot() {
+        let (_dir, paths) = test_paths("backup-precedence");
+        std::fs::write(&paths.backup, encode_state(&state_with_rank(4)).unwrap()).unwrap();
+        std::fs::write(
+            &paths.pre_migration,
+            encode_state(&state_with_rank(5)).unwrap(),
+        )
+        .unwrap();
+
+        let loaded = load_state(&paths).unwrap();
+
+        assert_eq!(loaded.source, RecoverySource::Backup);
+        assert_eq!(loaded.state.rank, 4);
+    }
+
+    #[test]
+    fn invalid_primary_and_backup_recover_from_pre_migration_snapshot() {
+        let (_dir, paths) = test_paths("snapshot-recovery");
+        std::fs::write(&paths.primary, b"invalid primary").unwrap();
+        std::fs::write(&paths.backup, b"invalid backup").unwrap();
+        let snapshot = include_bytes!("../tests/fixtures/progress_v1.json");
+        std::fs::write(&paths.pre_migration, snapshot).unwrap();
+
+        let loaded = load_state(&paths).unwrap();
+
+        assert_eq!(loaded.source, RecoverySource::PreMigration);
+        assert_eq!(loaded.state, fixture_state());
+    }
+
+    #[test]
+    fn recovery_preserves_every_candidate_byte_for_byte() {
+        let (_dir, paths) = test_paths("candidate-preservation");
+        let invalid_primary = b"invalid primary";
+        let invalid_backup = b"{\"schema_version\":2}";
+        let snapshot = include_bytes!("../tests/fixtures/progress_v1.json");
+        std::fs::write(&paths.primary, invalid_primary).unwrap();
+        std::fs::write(&paths.backup, invalid_backup).unwrap();
+        std::fs::write(&paths.pre_migration, snapshot).unwrap();
+
         load_state(&paths).unwrap();
-        let original = std::fs::read(&paths.pre_migration).unwrap();
-        std::fs::write(&paths.primary, br#"{"rank":0}"#).unwrap();
-        let _ = load_state(&paths);
-        assert_eq!(std::fs::read(&paths.pre_migration).unwrap(), original);
+
+        assert_eq!(std::fs::read(&paths.primary).unwrap(), invalid_primary);
+        assert_eq!(std::fs::read(&paths.backup).unwrap(), invalid_backup);
+        assert_eq!(std::fs::read(&paths.pre_migration).unwrap(), snapshot);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn dangling_candidate_symlink_is_not_treated_as_a_new_install() {
+        use std::os::unix::fs::symlink;
+
+        let (_dir, paths) = test_paths("dangling-symlink");
+        symlink("missing-progress.json", &paths.primary).unwrap();
+
+        let error = load_state(&paths).unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::NotFound);
+        assert!(std::fs::symlink_metadata(&paths.primary)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn snapshot_symlink_is_rejected_even_when_its_target_is_valid() {
+        use std::os::unix::fs::symlink;
+
+        let (dir, paths) = test_paths("snapshot-symlink");
+        let legacy = include_bytes!("../tests/fixtures/progress_v1.json");
+        let target = dir.0.join("snapshot-target.json");
+        std::fs::write(&paths.primary, legacy).unwrap();
+        std::fs::write(&target, legacy).unwrap();
+        symlink(&target, &paths.pre_migration).unwrap();
+
+        let error = load_state(&paths).unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+        assert_eq!(std::fs::read(&target).unwrap(), legacy);
+        assert!(std::fs::symlink_metadata(&paths.pre_migration)
+            .unwrap()
+            .file_type()
+            .is_symlink());
     }
 
     #[test]
