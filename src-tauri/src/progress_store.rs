@@ -29,10 +29,7 @@ pub struct LoadOutcome {
 
 impl ProgressPaths {
     pub fn from_primary(primary: std::path::PathBuf) -> Self {
-        let dir = primary
-            .parent()
-            .unwrap_or_else(|| std::path::Path::new(""))
-            .to_path_buf();
+        let dir = parent_directory(&primary).to_path_buf();
         Self {
             primary,
             backup: dir.join("progress.json.bak"),
@@ -58,6 +55,12 @@ struct LegacyProgressState {
 
 fn invalid_data(error: impl std::fmt::Display) -> std::io::Error {
     std::io::Error::new(std::io::ErrorKind::InvalidData, error.to_string())
+}
+
+fn parent_directory(path: &std::path::Path) -> &std::path::Path {
+    path.parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| std::path::Path::new("."))
 }
 
 fn validate_rank(state: ProgressState) -> std::io::Result<ProgressState> {
@@ -117,14 +120,20 @@ fn validate_snapshot(path: &std::path::Path) -> std::io::Result<Vec<u8>> {
     }
 
     let bytes = std::fs::read(path)?;
-    decode_state(&bytes)?;
+    let (_, is_legacy) = decode_state(&bytes)?;
+    if !is_legacy {
+        return Err(invalid_data(format!(
+            "legacy snapshot contains versioned progress: {}",
+            path.display()
+        )));
+    }
     Ok(bytes)
 }
 
 fn create_snapshot_temporary(
     path: &std::path::Path,
 ) -> std::io::Result<(TemporarySnapshot, std::fs::File)> {
-    let parent = path.parent().unwrap_or_else(|| std::path::Path::new(""));
+    let parent = parent_directory(path);
     let file_name = path
         .file_name()
         .unwrap_or_else(|| std::ffi::OsStr::new("progress-snapshot"));
@@ -147,8 +156,7 @@ fn create_snapshot_temporary(
 }
 
 fn sync_parent_directory(path: &std::path::Path) -> std::io::Result<()> {
-    let parent = path.parent().unwrap_or_else(|| std::path::Path::new("."));
-    std::fs::File::open(parent)?.sync_all()
+    std::fs::File::open(parent_directory(path))?.sync_all()
 }
 
 fn write_legacy_snapshot(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
@@ -218,26 +226,44 @@ pub fn load_state(paths: &ProgressPaths) -> std::io::Result<LoadOutcome> {
         (&paths.backup, RecoverySource::Backup),
         (&paths.pre_migration, RecoverySource::PreMigration),
     ];
-    let mut invalid_error = None;
+    let mut recovery_error = None;
 
     for (path, source) in candidates {
-        let bytes = match read_candidate(path, source == RecoverySource::PreMigration)? {
-            Some(bytes) => bytes,
-            None => continue,
+        let bytes = match read_candidate(path, source == RecoverySource::PreMigration) {
+            Ok(Some(bytes)) => bytes,
+            Ok(None) => continue,
+            Err(error) => {
+                if recovery_error.is_none() {
+                    recovery_error = Some(error);
+                }
+                continue;
+            }
         };
 
         match decode_state(&bytes) {
             Ok((state, is_legacy)) => {
+                if source == RecoverySource::PreMigration && !is_legacy {
+                    if recovery_error.is_none() {
+                        recovery_error = Some(invalid_data(
+                            "pre-migration snapshot contains versioned progress",
+                        ));
+                    }
+                    continue;
+                }
                 if source == RecoverySource::Primary && is_legacy {
                     write_legacy_snapshot(&paths.pre_migration, &bytes)?;
                 }
                 return Ok(LoadOutcome { state, source });
             }
-            Err(error) => invalid_error = Some(error),
+            Err(error) => {
+                if recovery_error.is_none() {
+                    recovery_error = Some(error);
+                }
+            }
         }
     }
 
-    if let Some(error) = invalid_error {
+    if let Some(error) = recovery_error {
         return Err(error);
     }
 
@@ -256,12 +282,29 @@ mod tests {
     use crate::progress::ProgressState;
 
     static TEST_DIRECTORY_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    static TEST_CURRENT_DIRECTORY: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     struct TestDirectory(std::path::PathBuf);
 
     impl Drop for TestDirectory {
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    struct CurrentDirectory(std::path::PathBuf);
+
+    impl CurrentDirectory {
+        fn set(path: &std::path::Path) -> Self {
+            let original = std::env::current_dir().unwrap();
+            std::env::set_current_dir(path).unwrap();
+            Self(original)
+        }
+    }
+
+    impl Drop for CurrentDirectory {
+        fn drop(&mut self) {
+            std::env::set_current_dir(&self.0).unwrap();
         }
     }
 
@@ -352,6 +395,55 @@ mod tests {
     }
 
     #[test]
+    fn versioned_existing_snapshot_rejects_legacy_primary_without_changing_snapshot() {
+        let (_dir, paths) = test_paths("versioned-snapshot");
+        let legacy = include_bytes!("../tests/fixtures/progress_v1.json");
+        let versioned_snapshot = encode_state(&state_with_rank(3)).unwrap();
+        std::fs::write(&paths.primary, legacy).unwrap();
+        std::fs::write(&paths.pre_migration, &versioned_snapshot).unwrap();
+
+        let error = load_state(&paths).unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+        assert_eq!(
+            std::fs::read(&paths.pre_migration).unwrap(),
+            versioned_snapshot
+        );
+    }
+
+    #[test]
+    fn versioned_pre_migration_snapshot_is_not_a_recovery_source() {
+        let (_dir, paths) = test_paths("versioned-snapshot-recovery");
+        let versioned_snapshot = encode_state(&state_with_rank(3)).unwrap();
+        std::fs::write(&paths.pre_migration, &versioned_snapshot).unwrap();
+
+        let error = load_state(&paths).unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+        assert_eq!(
+            std::fs::read(&paths.pre_migration).unwrap(),
+            versioned_snapshot
+        );
+    }
+
+    #[test]
+    fn relative_primary_publishes_legacy_snapshot_and_syncs_its_directory() {
+        let _current_directory_lock = TEST_CURRENT_DIRECTORY
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let (dir, _) = test_paths("relative-primary");
+        let _current_directory = CurrentDirectory::set(&dir.0);
+        let paths = ProgressPaths::from_primary(std::path::PathBuf::from("progress.json"));
+        let legacy = include_bytes!("../tests/fixtures/progress_v1.json");
+        std::fs::write(&paths.primary, legacy).unwrap();
+
+        let loaded = load_state(&paths).unwrap();
+
+        assert_eq!(loaded.source, RecoverySource::Primary);
+        assert_eq!(std::fs::read(&paths.pre_migration).unwrap(), legacy);
+    }
+
+    #[test]
     fn malformed_snapshot_input_is_not_published() {
         let (_dir, paths) = test_paths("malformed-snapshot-input");
 
@@ -436,6 +528,25 @@ mod tests {
         let error = load_state(&paths).unwrap_err();
 
         assert_eq!(error.kind(), std::io::ErrorKind::NotFound);
+        assert!(std::fs::symlink_metadata(&paths.primary)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn dangling_primary_recovers_from_valid_backup() {
+        use std::os::unix::fs::symlink;
+
+        let (_dir, paths) = test_paths("dangling-primary-backup");
+        symlink("missing-progress.json", &paths.primary).unwrap();
+        std::fs::write(&paths.backup, encode_state(&state_with_rank(4)).unwrap()).unwrap();
+
+        let loaded = load_state(&paths).unwrap();
+
+        assert_eq!(loaded.source, RecoverySource::Backup);
+        assert_eq!(loaded.state.rank, 4);
         assert!(std::fs::symlink_metadata(&paths.primary)
             .unwrap()
             .file_type()
