@@ -14,20 +14,32 @@ pub const GATES: [u32; 14] = [0, 5, 10, 15, 21, 28, 36, 45, 55, 66, 78, 91, 105,
 
 pub const TOKENS_PER_XP: u64 = 1000;
 
-/// Total XP required to reach `level`: floor(0.8 · L³ · 1.5^prestige), as the
-/// exact integer form `4·L³·3^p / (5·2^p)`. u128 intermediates because
-/// `3^p · L³` overflows u64 long before the inputs look unreasonable.
+/// Total XP required to reach `level`, using three exact prestige bands:
+/// 1.5x for the first three cycles, 1.75x for the next three, then 2x.
 pub fn xp_for_level(level: u32, prestige: u32) -> u64 {
     if level <= 1 {
         return 0;
     }
-    let l = level as u128;
-    let p = prestige.min(40); // 1.5^40 already dwarfs any real token count
-    let num = 4u128
-        .saturating_mul(l * l * l)
-        .saturating_mul(3u128.saturating_pow(p));
-    let den = 5u128 * 2u128.saturating_pow(p);
-    u64::try_from(num / den).unwrap_or(u64::MAX)
+    let first = prestige.min(3);
+    let second = prestige.saturating_sub(3).min(3);
+    let third = prestige.saturating_sub(6);
+    let multiplier_numerator = 3u128
+        .saturating_pow(first)
+        .saturating_mul(7u128.saturating_pow(second))
+        .saturating_mul(2u128.saturating_pow(third));
+    let multiplier_denominator = 2u128
+        .saturating_pow(first)
+        .saturating_mul(4u128.saturating_pow(second));
+    let level = u128::from(level);
+    let numerator = 4u128
+        .saturating_mul(level.saturating_pow(3))
+        .saturating_mul(multiplier_numerator);
+    let denominator = 5u128.saturating_mul(multiplier_denominator);
+    u64::try_from(numerator / denominator).unwrap_or(u64::MAX)
+}
+
+pub fn prestige_cycle_token_cost(prestige: u32) -> u64 {
+    xp_for_level(GATES[TIERS.len() - 1], prestige).saturating_mul(TOKENS_PER_XP)
 }
 
 /// Largest level whose threshold is within `xp`. Linear walk: the 999 cap
@@ -60,7 +72,7 @@ pub struct TallyState {
     pub total_tokens: u64,
     pub claude_offsets: std::collections::HashMap<String, u64>, // path -> consumed byte offset
     pub codex_offsets: std::collections::HashMap<String, u64>,
-    pub codex_totals: std::collections::HashMap<String, u64>, // path -> last cumulative total_tokens
+    pub codex_totals: std::collections::HashMap<String, u64>, // path -> last cumulative output total
 }
 
 /// All `*.jsonl` files under `dir`, found with a manual stack — a handful of
@@ -104,26 +116,19 @@ fn complete_lines_from(path: &std::path::Path, offset: u64) -> Option<(String, u
     ))
 }
 
-/// Token count for one Claude transcript line. Every `message.usage` field
-/// counts — cache reads dominate real sessions and are spent tokens too.
-/// Malformed lines yield 0 but still consume offset, so a bad line can never
-/// wedge the scanner.
-fn claude_line_tokens(line: &str) -> u64 {
-    let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
-        return 0;
-    };
-    let Some(usage) = v.get("message").and_then(|m| m.get("usage")) else {
-        return 0;
-    };
-    [
-        "input_tokens",
-        "cache_creation_input_tokens",
-        "cache_read_input_tokens",
-        "output_tokens",
-    ]
-    .iter()
-    .map(|key| usage.get(key).and_then(|n| n.as_u64()).unwrap_or(0))
-    .sum()
+/// Output tokens for one Claude transcript line. Malformed lines yield 0 but
+/// still consume their offset, so a bad line can never wedge the scanner.
+fn claude_line_output_tokens(line: &str) -> u64 {
+    serde_json::from_str::<serde_json::Value>(line)
+        .ok()
+        .and_then(|value| {
+            value
+                .get("message")?
+                .get("usage")?
+                .get("output_tokens")?
+                .as_u64()
+        })
+        .unwrap_or(0)
 }
 
 pub fn scan_claude_dir(dir: &std::path::Path, state: &mut TallyState) {
@@ -133,22 +138,30 @@ pub fn scan_claude_dir(dir: &std::path::Path, state: &mut TallyState) {
         let Some((text, new_offset)) = complete_lines_from(&path, offset) else {
             continue;
         };
-        let added: u64 = text.lines().map(claude_line_tokens).sum();
+        let added: u64 = text.lines().map(claude_line_output_tokens).sum();
         state.total_tokens = state.total_tokens.saturating_add(added);
         state.claude_offsets.insert(key, new_offset);
     }
 }
 
-/// Cumulative total from one Codex `token_count` event line. The field lives
-/// at `payload.info.total_token_usage.total_tokens`, but some builds emit
-/// `info` at the top level — both shapes exist in the wild.
-fn codex_line_total(line: &str) -> Option<u64> {
-    let v = serde_json::from_str::<serde_json::Value>(line).ok()?;
-    let info = v
+/// Cumulative output total from one Codex `token_count` event line. Some
+/// builds emit `info` at the top level, so both observed shapes are accepted.
+fn codex_line_output_total(line: &str) -> Option<u64> {
+    let value = serde_json::from_str::<serde_json::Value>(line).ok()?;
+    let info = value
         .get("payload")
-        .and_then(|p| p.get("info"))
-        .or_else(|| v.get("info"))?;
-    info.get("total_token_usage")?.get("total_tokens")?.as_u64()
+        .and_then(|payload| payload.get("info"))
+        .or_else(|| value.get("info"))?;
+    let usage = info.get("total_token_usage")?;
+    let output = usage
+        .get("output_tokens")
+        .and_then(|value| value.as_u64())
+        .unwrap_or(0);
+    let reasoning = usage
+        .get("reasoning_output_tokens")
+        .and_then(|value| value.as_u64())
+        .unwrap_or(0);
+    Some(output.saturating_add(reasoning))
 }
 
 pub fn scan_codex_dir(dir: &std::path::Path, state: &mut TallyState) {
@@ -161,7 +174,7 @@ pub fn scan_codex_dir(dir: &std::path::Path, state: &mut TallyState) {
         state.codex_offsets.insert(key.clone(), new_offset);
         // Only the latest total matters: it is a per-file running total, so
         // summing events would multiply-count every earlier token.
-        let Some(latest) = text.lines().rev().find_map(codex_line_total) else {
+        let Some(latest) = text.lines().rev().find_map(codex_line_output_total) else {
             continue;
         };
         let stored = state.codex_totals.get(&key).copied().unwrap_or(0);
@@ -200,6 +213,8 @@ pub struct LevelProgress {
 /// progression math of its own.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct Progress {
+    #[serde(serialize_with = "serialize_u64_decimal")]
+    pub lifetime_output_tokens: u64,
     pub xp: u64,
     pub level: u32,
     pub rank: usize,
@@ -208,6 +223,13 @@ pub struct Progress {
     pub rank_up_eligible: bool,
     pub prestige_eligible: bool,
     pub level_progress: LevelProgress,
+}
+
+fn serialize_u64_decimal<S>(value: &u64, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    serializer.serialize_str(&value.to_string())
 }
 
 /// XP since the last prestige: earlier tokens stay in the lifetime tally but
@@ -226,6 +248,7 @@ pub fn progress_view(state: &ProgressState) -> Progress {
     let floor = xp_for_level(level, state.prestige);
     let needed = xp_for_level(level + 1, state.prestige).saturating_sub(floor);
     Progress {
+        lifetime_output_tokens: state.tally.total_tokens,
         xp,
         level,
         rank: state.rank,
@@ -238,6 +261,30 @@ pub fn progress_view(state: &ProgressState) -> Progress {
             needed,
         },
     }
+}
+
+pub fn recalculate_from_output_history(state: &mut ProgressState) {
+    let mut prestige = 0u32;
+    let mut floor = 0u64;
+    loop {
+        let cost = prestige_cycle_token_cost(prestige);
+        let remaining = state.tally.total_tokens.saturating_sub(floor);
+        if cost == 0 || remaining < cost {
+            break;
+        }
+        floor = floor
+            .checked_add(cost)
+            .expect("affordability guarantees a u64 sum");
+        prestige = prestige.saturating_add(1);
+        if floor == u64::MAX {
+            break;
+        }
+    }
+    state.prestige = prestige;
+    state.prestige_token_floor = floor;
+    let level = level_for_xp(effective_xp(state), prestige);
+    state.rank = GATES.iter().rposition(|gate| level >= *gate).unwrap_or(0);
+    state.initialized = true;
 }
 
 /// Advances exactly one tier. Validation lives here, not in the UI: the
@@ -262,15 +309,26 @@ pub fn initialize_baseline(state: &mut ProgressState) {
     state.initialized = true;
 }
 
-/// Prestige: back to naked, curve steepens, and the token floor moves to
-/// "now" so only future tokens level the next cycle.
+/// Prestige spends the exact current cycle cost, preserving any surplus
+/// output toward the next cycle.
 pub fn try_prestige(state: &mut ProgressState) -> Result<(), String> {
     if !prestige_eligible(state.rank) {
         return Err("prestige requires the final tier".into());
     }
-    state.prestige += 1;
+    let cost = prestige_cycle_token_cost(state.prestige);
+    let effective_output = state
+        .tally
+        .total_tokens
+        .saturating_sub(state.prestige_token_floor);
+    if effective_output < cost {
+        return Err("prestige requires the complete current cycle".into());
+    }
+    state.prestige_token_floor = state
+        .prestige_token_floor
+        .checked_add(cost)
+        .expect("affordability guarantees a u64 floor");
+    state.prestige = state.prestige.saturating_add(1);
     state.rank = 0;
-    state.prestige_token_floor = state.tally.total_tokens;
     Ok(())
 }
 
@@ -373,9 +431,7 @@ pub fn spawn_progress_watcher(app: tauri::AppHandle) {
                 let mut candidate = current.clone();
                 scan_claude_dir(&claude_dir, &mut candidate.tally);
                 scan_codex_dir(&codex_dir, &mut candidate.tally);
-                if !candidate.initialized {
-                    initialize_baseline(&mut candidate);
-                }
+                recalculate_from_output_history(&mut candidate);
                 match commit_scanned_candidate(&mut current, candidate, |candidate| {
                     save_state(&store.paths, candidate)
                         .map_err(|error| format!("progress persistence failed: {error}"))
@@ -408,10 +464,13 @@ mod tests {
     }
 
     #[test]
-    fn prestige_steepens_curve_by_1_5x_each_cycle() {
-        assert_eq!(xp_for_level(10, 1), 1200); // 800 * 1.5
-        assert_eq!(xp_for_level(10, 2), 1800);
-        assert_eq!(xp_for_level(10, 4), 4050);
+    fn tiered_curve_matches_exact_thresholds_through_prestige_ten() {
+        let expected = [
+            800, 1_200, 1_800, 2_700, 4_725, 8_268, 14_470, 28_940, 57_881, 115_762, 231_525,
+        ];
+        for (prestige, xp) in expected.into_iter().enumerate() {
+            assert_eq!(xp_for_level(10, prestige as u32), xp);
+        }
     }
 
     #[test]
@@ -451,45 +510,92 @@ mod tests {
     }
 
     const CLAUDE_LINE: &str = r#"{"message":{"usage":{"input_tokens":10,"cache_creation_input_tokens":5,"cache_read_input_tokens":85,"output_tokens":100}}}"#;
-    const CODEX_EVENT_20K: &str = r#"{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1,"cached_input_tokens":2,"output_tokens":3,"reasoning_output_tokens":4,"total_tokens":20000}}}}"#;
+    const CODEX_EVENT: &str = r#"{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1000,"cached_input_tokens":900,"output_tokens":3,"reasoning_output_tokens":4,"total_tokens":20000}}}}"#;
+
+    fn tally_test_dir(label: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("mana-output-{label}-{}", std::process::id(),));
+        let _ = std::fs::remove_dir_all(&dir);
+        dir
+    }
+
+    fn append_line(path: &std::path::Path, line: &str) {
+        use std::io::Write as _;
+        let mut file = std::fs::OpenOptions::new().append(true).open(path).unwrap();
+        writeln!(file, "{line}").unwrap();
+    }
 
     #[test]
-    fn claude_scan_sums_all_usage_fields_and_is_idempotent() {
-        let dir = std::env::temp_dir().join(format!("mana-tally-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
+    fn claude_scan_counts_output_only_and_is_idempotent() {
+        let dir = tally_test_dir("claude");
         let file = dir.join("proj/session.jsonl");
         write(&file, &format!("{CLAUDE_LINE}\nnot json\n{CLAUDE_LINE}\n"));
         let mut state = TallyState::default();
         scan_claude_dir(&dir, &mut state);
-        assert_eq!(state.total_tokens, 400); // 200 * 2, malformed line skipped
+        assert_eq!(state.total_tokens, 200);
         scan_claude_dir(&dir, &mut state);
-        assert_eq!(state.total_tokens, 400); // idempotent
+        assert_eq!(state.total_tokens, 200);
         // an appended line adds only the delta, and a trailing partial line is not consumed
-        let mut f = std::fs::OpenOptions::new().append(true).open(&file).unwrap();
+        let mut f = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&file)
+            .unwrap();
         use std::io::Write as _;
         write!(f, "{CLAUDE_LINE}\n{{\"partial").unwrap();
         scan_claude_dir(&dir, &mut state);
-        assert_eq!(state.total_tokens, 600);
+        assert_eq!(state.total_tokens, 300);
         let stored = *state.claude_offsets.values().next().unwrap();
         assert!(stored < std::fs::metadata(&file).unwrap().len());
     }
 
     #[test]
-    fn codex_scan_adds_running_total_deltas_not_event_sums() {
-        let dir = std::env::temp_dir().join(format!("mana-tally-codex-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        let file = dir.join("2026/session.jsonl");
-        write(&file, &format!("{CODEX_EVENT_20K}\n"));
+    fn codex_scan_counts_output_and_reasoning_deltas_only() {
+        let dir = tally_test_dir("codex");
+        let file = dir.join("session.jsonl");
+        write(&file, &format!("{CODEX_EVENT}\n"));
         let mut state = TallyState::default();
         scan_codex_dir(&dir, &mut state);
-        assert_eq!(state.total_tokens, 20000);
+        assert_eq!(state.total_tokens, 7);
         scan_codex_dir(&dir, &mut state);
-        assert_eq!(state.total_tokens, 20000); // idempotent
-        let mut f = std::fs::OpenOptions::new().append(true).open(&file).unwrap();
-        use std::io::Write as _;
-        writeln!(f, "{}", CODEX_EVENT_20K.replace("20000", "20900")).unwrap();
+        assert_eq!(state.total_tokens, 7);
+        let appended = CODEX_EVENT
+            .replace("\"output_tokens\":3", "\"output_tokens\":30")
+            .replace(
+                "\"reasoning_output_tokens\":4",
+                "\"reasoning_output_tokens\":20",
+            );
+        append_line(&file, &appended);
         scan_codex_dir(&dir, &mut state);
-        assert_eq!(state.total_tokens, 20900); // delta 900, never 40900
+        assert_eq!(state.total_tokens, 50);
+    }
+
+    #[test]
+    fn scanners_ignore_malformed_negative_and_non_integer_values() {
+        let claude_dir = tally_test_dir("claude-invalid");
+        write(
+            &claude_dir.join("session.jsonl"),
+            concat!(
+                "{\"message\":{\"usage\":{\"output_tokens\":-1}}}\n",
+                "{\"message\":{\"usage\":{\"output_tokens\":1.5}}}\n",
+                "{\"message\":{\"usage\":{\"output_tokens\":\"100\"}}}\n",
+                "not json\n"
+            ),
+        );
+        let mut claude = TallyState::default();
+        scan_claude_dir(&claude_dir, &mut claude);
+        assert_eq!(claude.total_tokens, 0);
+
+        let codex_dir = tally_test_dir("codex-invalid");
+        write(
+            &codex_dir.join("session.jsonl"),
+            concat!(
+                "{\"payload\":{\"info\":{\"total_token_usage\":{\"output_tokens\":-1,\"reasoning_output_tokens\":-2}}}}\n",
+                "{\"payload\":{\"info\":{\"total_token_usage\":{\"output_tokens\":1.5,\"reasoning_output_tokens\":\"2\"}}}}\n",
+                "not json\n"
+            ),
+        );
+        let mut codex = TallyState::default();
+        scan_codex_dir(&codex_dir, &mut codex);
+        assert_eq!(codex.total_tokens, 0);
     }
 
     fn state_with(tokens: u64, rank: usize, prestige: u32, floor: u64) -> ProgressState {
@@ -513,7 +619,17 @@ mod tests {
             (v.xp, v.level, v.tier, v.rank_up_eligible),
             (800, 10, "plastic".into(), true) // rank 1 = plastic; gate for rank 2 (wood) is 10
         );
-        assert_eq!(v.level_progress.needed, xp_for_level(11, 0) - xp_for_level(10, 0));
+        assert_eq!(
+            v.level_progress.needed,
+            xp_for_level(11, 0) - xp_for_level(10, 0)
+        );
+        assert_eq!(v.lifetime_output_tokens, 800_000);
+    }
+
+    #[test]
+    fn progress_serializes_lifetime_output_tokens_as_a_decimal_string() {
+        let value = serde_json::to_value(progress_view(&state_with(u64::MAX, 0, 0, 0))).unwrap();
+        assert_eq!(value["lifetime_output_tokens"], u64::MAX.to_string());
     }
 
     #[test]
@@ -554,7 +670,7 @@ mod tests {
     }
 
     #[test]
-    fn scanned_sub_xp_changes_are_persisted_without_visible_event() {
+    fn scanned_sub_xp_changes_are_persisted_with_lifetime_output_event() {
         let mut current = state_with(1_000, 0, 0, 0);
         let old_view = progress_view(&current);
         let mut candidate = current.clone();
@@ -563,7 +679,7 @@ mod tests {
             .tally
             .claude_offsets
             .insert("claude.jsonl".into(), 321);
-        assert_eq!(progress_view(&candidate), old_view);
+        assert_ne!(progress_view(&candidate), old_view);
         let persisted = std::cell::RefCell::new(None);
 
         let event =
@@ -575,22 +691,86 @@ mod tests {
 
         assert_eq!(persisted.into_inner(), Some(candidate.clone()));
         assert_eq!(current, candidate);
-        assert_eq!(event, None);
+        assert_eq!(event, Some(progress_view(&candidate)));
     }
 
     #[test]
-    fn prestige_resets_baseline_and_steepens() {
-        let mut s = state_with(2_000_000_000, 13, 0, 0);
-        assert!(try_prestige(&mut s).is_ok());
-        assert_eq!((s.rank, s.prestige, s.prestige_token_floor), (0, 1, 2_000_000_000));
-        let v = progress_view(&s);
-        assert_eq!((v.xp, v.level), (0, 1));
-        let mut not_godlike = state_with(2_000_000_000, 12, 0, 0);
+    fn recalculation_spends_complete_cycles_and_keeps_remainder() {
+        let first = prestige_cycle_token_cost(0);
+        let second = prestige_cycle_token_cost(1);
+        let remainder = xp_for_level(10, 2) * TOKENS_PER_XP;
+        let mut state = state_with(first + second + remainder, 13, 8, 99);
+        recalculate_from_output_history(&mut state);
+        assert_eq!(
+            (state.prestige, state.prestige_token_floor),
+            (2, first + second)
+        );
+        assert_eq!(progress_view(&state).level, 10);
+        assert_eq!(state.rank, 2);
+    }
+
+    #[test]
+    fn recalculation_handles_zero_exact_final_level_multiple_cycles_and_maximum() {
+        let mut zero = state_with(0, 13, 9, 99);
+        recalculate_from_output_history(&mut zero);
+        assert_eq!(
+            (zero.prestige, zero.prestige_token_floor, zero.rank),
+            (0, 0, 0)
+        );
+
+        let exact_level = prestige_cycle_token_cost(0);
+        let mut exact = state_with(exact_level, 0, 0, 0);
+        recalculate_from_output_history(&mut exact);
+        assert_eq!(
+            (exact.prestige, exact.prestige_token_floor, exact.rank),
+            (1, exact_level, 0)
+        );
+
+        let first = prestige_cycle_token_cost(0);
+        let second = prestige_cycle_token_cost(1);
+        let third = prestige_cycle_token_cost(2);
+        let mut multiple = state_with(first + second + third, 0, 0, 0);
+        recalculate_from_output_history(&mut multiple);
+        assert_eq!(
+            (multiple.prestige, multiple.prestige_token_floor),
+            (3, first + second + third)
+        );
+
+        let mut maximum = state_with(u64::MAX, 0, 0, 0);
+        recalculate_from_output_history(&mut maximum);
+        assert!(maximum.initialized);
+        assert!(maximum.prestige > 0);
+        assert!(maximum.prestige_token_floor <= u64::MAX);
+    }
+
+    #[test]
+    fn prestige_spends_exact_cycle_cost_and_preserves_surplus() {
+        let cost = prestige_cycle_token_cost(0);
+        let surplus = xp_for_level(10, 1) * TOKENS_PER_XP;
+        let mut state = state_with(cost + surplus, TIERS.len() - 1, 0, 0);
+        try_prestige(&mut state).unwrap();
+        assert_eq!(
+            (state.prestige, state.rank, state.prestige_token_floor),
+            (1, 0, cost)
+        );
+        assert_eq!(progress_view(&state).level, 10);
+    }
+
+    #[test]
+    fn prestige_rejects_final_rank_without_the_complete_cycle_cost() {
+        let cost = prestige_cycle_token_cost(0);
+        let mut state = state_with(cost - 1, TIERS.len() - 1, 0, 0);
+        assert!(try_prestige(&mut state).is_err());
+    }
+
+    #[test]
+    fn prestige_requires_final_rank() {
+        let mut not_godlike = state_with(u64::MAX, 12, 0, 0);
         assert!(try_prestige(&mut not_godlike).is_err());
     }
 
     #[test]
-    fn first_scan_banks_history_and_zeroes_progression() {
+    fn initialization_banks_history_and_zeroes_progression() {
         let mut s = state_with(16_000_000_000, 13, 1, 0);
         s.initialized = false;
         initialize_baseline(&mut s);
@@ -608,12 +788,12 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("mana-tally-shrunk-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let file = dir.join("session.jsonl");
-        write(&file, &format!("{CODEX_EVENT_20K}\n"));
+        write(&file, &format!("{CODEX_EVENT}\n"));
         let key = file.to_string_lossy().into_owned();
         let mut state = TallyState::default();
         state.codex_totals.insert(key.clone(), 50000);
         scan_codex_dir(&dir, &mut state);
         assert_eq!(state.total_tokens, 0); // truncated/rotated file: never double-count
-        assert_eq!(state.codex_totals[&key], 20000); // baseline resynced
+        assert_eq!(state.codex_totals[&key], 7); // baseline resynced
     }
 }
