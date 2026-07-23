@@ -17,6 +17,9 @@ from PIL import Image
 ALPHA_THRESHOLD = 16
 CANVAS_SIZE = 96
 TRANSPARENT_EDGE = 4
+# Generated joints occupy this bottom-right-anchored square so their rail
+# centers land inside the frame's right and bottom socket windows.
+NORMALIZED_ART_EXTENT = 76
 RIGHT_SOCKET = (88, 28, 96, 68)
 BOTTOM_SOCKET = (28, 88, 68, 96)
 CORNER_NAMES = ("corner-tl", "corner-tr", "corner-bl", "corner-br")
@@ -86,7 +89,7 @@ def normalize_top_left_corner(source: Image.Image) -> Image.Image:
         raise ValueError("corner art has no visible pixels")
 
     trimmed = rgba.crop(visible_bounds)
-    available = CANVAS_SIZE - TRANSPARENT_EDGE
+    available = NORMALIZED_ART_EXTENT
     scale = min(available / trimmed.width, available / trimmed.height)
     resized_size = (
         min(available, max(1, round(trimmed.width * scale))),
