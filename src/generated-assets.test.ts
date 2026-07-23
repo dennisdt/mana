@@ -217,6 +217,19 @@ function pixel(image: DecodedPng, x: number, y: number): number[] {
   return Array.from(image.pixels.subarray(offset, offset + 4));
 }
 
+function chromaLikePixels(image: DecodedPng, frameIndex: number): number {
+  const cellLeft = frameIndex * AURA_CELL_SIZE;
+  let count = 0;
+  for (let y = 0; y < AURA_CELL_SIZE; y += 1) {
+    for (let x = 0; x < AURA_CELL_SIZE; x += 1) {
+      const offset = (y * image.width + cellLeft + x) * 4;
+      const [red, green, blue, alpha] = image.pixels.subarray(offset, offset + 4);
+      if (alpha > 16 && red > 180 && blue > 180 && green < 80) count += 1;
+    }
+  }
+  return count;
+}
+
 function assertRepeatableRail(
   image: DecodedPng,
   piece: "rail-h" | "rail-v",
@@ -369,6 +382,20 @@ describe("generated elemental aura assets", () => {
         hashes.add(metrics.hash);
       }
       expect(hashes.size, `${filename} distinct authored frames`).toBe(frameCount);
+    }
+  });
+
+  it("keeps chroma-key magenta out of every visible Codex aura cell", () => {
+    const directory = new URL("../public/effects/", import.meta.url);
+    for (const [filename, frameCount] of Object.entries(AURA_SPECS)) {
+      if (!filename.startsWith("codex-")) continue;
+      const image = decodeRgba(new URL(filename, directory));
+      for (let frameIndex = 0; frameIndex < frameCount; frameIndex += 1) {
+        expect(
+          chromaLikePixels(image, frameIndex),
+          `${filename} frame ${frameIndex} visible chroma-like pixels`,
+        ).toBe(0);
+      }
     }
   });
 });
