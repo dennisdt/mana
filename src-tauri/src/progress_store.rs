@@ -1,5 +1,5 @@
 use crate::progress::{ProgressState, TallyState, TIERS};
-use std::io::Write;
+use std::io::{Read, Seek, Write};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 pub const SCHEMA_VERSION: u32 = 2;
@@ -207,34 +207,153 @@ fn write_legacy_snapshot(path: &std::path::Path, bytes: &[u8]) -> std::io::Resul
     }
 }
 
+enum CandidateReadError {
+    RegularFile(std::io::Error),
+    Other(std::io::Error),
+}
+
+impl CandidateReadError {
+    fn into_inner(self) -> std::io::Error {
+        match self {
+            Self::RegularFile(error) | Self::Other(error) => error,
+        }
+    }
+}
+
 fn read_candidate(
     path: &std::path::Path,
     require_regular_file: bool,
-) -> std::io::Result<Option<Vec<u8>>> {
+) -> Result<Option<Vec<u8>>, CandidateReadError> {
     let metadata = match std::fs::symlink_metadata(path) {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(error),
+        Err(error) => return Err(CandidateReadError::Other(error)),
     };
 
     if require_regular_file && !metadata.file_type().is_file() {
-        return Err(invalid_data(format!(
+        return Err(CandidateReadError::Other(invalid_data(format!(
             "legacy snapshot is not a regular file: {}",
             path.display()
-        )));
+        ))));
     }
 
-    std::fs::read(path).map(Some)
+    std::fs::read(path).map(Some).map_err(|error| {
+        if metadata.file_type().is_file() {
+            CandidateReadError::RegularFile(error)
+        } else {
+            CandidateReadError::Other(error)
+        }
+    })
 }
 
 fn primary_contains_valid_state(path: &std::path::Path) -> std::io::Result<bool> {
     match std::fs::symlink_metadata(path) {
-        Ok(_) => Ok(std::fs::read(path)
-            .and_then(|bytes| decode_state(&bytes))
-            .is_ok()),
+        Ok(metadata) if !metadata.file_type().is_file() => Ok(false),
+        Ok(_) => match decode_state(&std::fs::read(path)?) {
+            Ok(_) => Ok(true),
+            Err(error) if error.kind() == std::io::ErrorKind::InvalidData => Ok(false),
+            Err(error) => Err(error),
+        },
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
         Err(error) => Err(error),
     }
+}
+
+fn regular_file_contains_valid_state(
+    path: &std::path::Path,
+    require_legacy: bool,
+) -> std::io::Result<bool> {
+    let metadata = match std::fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error),
+    };
+    if !metadata.file_type().is_file() {
+        return Ok(false);
+    }
+
+    match decode_state(&std::fs::read(path)?) {
+        Ok((_, is_legacy)) => Ok(!require_legacy || is_legacy),
+        Err(error) if error.kind() == std::io::ErrorKind::InvalidData => Ok(false),
+        Err(error) => Err(error),
+    }
+}
+
+fn has_stable_recovery_source(
+    paths: &ProgressPaths,
+    primary_is_valid: bool,
+) -> std::io::Result<bool> {
+    if primary_is_valid || regular_file_contains_valid_state(&paths.backup, false)? {
+        return Ok(true);
+    }
+    regular_file_contains_valid_state(&paths.pre_migration, true)
+}
+
+fn open_save_temporary(
+    paths: &ProgressPaths,
+    primary_is_valid: bool,
+) -> std::io::Result<std::fs::File> {
+    let open_new = || {
+        std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create_new(true)
+            .open(&paths.temporary)
+    };
+
+    match open_new() {
+        Ok(file) => Ok(file),
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+            let metadata = std::fs::symlink_metadata(&paths.temporary)?;
+            if !metadata.file_type().is_file() {
+                return Err(invalid_data(format!(
+                    "progress temporary is not a regular file: {}",
+                    paths.temporary.display()
+                )));
+            }
+            if !has_stable_recovery_source(paths, primary_is_valid)? {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::AlreadyExists,
+                    format!(
+                        "progress temporary has no separate stable recovery source: {}",
+                        paths.temporary.display()
+                    ),
+                ));
+            }
+
+            std::fs::remove_file(&paths.temporary)?;
+            open_new()
+        }
+        Err(error) => Err(error),
+    }
+}
+
+fn validate_staged_temporary(
+    path: &std::path::Path,
+    opened_metadata: &std::fs::Metadata,
+) -> std::io::Result<()> {
+    let path_metadata = std::fs::symlink_metadata(path)?;
+    if !opened_metadata.file_type().is_file() || !path_metadata.file_type().is_file() {
+        return Err(invalid_data(format!(
+            "progress temporary is not a regular file: {}",
+            path.display()
+        )));
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if opened_metadata.dev() != path_metadata.dev()
+            || opened_metadata.ino() != path_metadata.ino()
+        {
+            return Err(invalid_data(format!(
+                "progress temporary changed before promotion: {}",
+                path.display()
+            )));
+        }
+    }
+
+    Ok(())
 }
 
 fn save_state_with_hook(
@@ -244,22 +363,31 @@ fn save_state_with_hook(
 ) -> std::io::Result<()> {
     let bytes = encode_state(state)?;
     std::fs::create_dir_all(parent_directory(&paths.primary))?;
-    let mut temporary = std::fs::OpenOptions::new()
-        .create(true)
-        .truncate(true)
-        .write(true)
-        .open(&paths.temporary)?;
+    let primary_is_valid = primary_contains_valid_state(&paths.primary)?;
+    let mut temporary = open_save_temporary(paths, primary_is_valid)?;
+    let temporary_metadata = temporary.metadata()?;
+    if !temporary_metadata.file_type().is_file() {
+        return Err(invalid_data(format!(
+            "progress temporary is not a regular file: {}",
+            paths.temporary.display()
+        )));
+    }
     temporary.write_all(&bytes)?;
     temporary.sync_all()?;
-    drop(temporary);
-    decode_state(&std::fs::read(&paths.temporary)?)?;
+    temporary.rewind()?;
+    let mut staged_bytes = Vec::new();
+    temporary.read_to_end(&mut staged_bytes)?;
+    decode_state(&staged_bytes)?;
+    validate_staged_temporary(&paths.temporary, &temporary_metadata)?;
     hook(SaveCheckpoint::TemporarySynced)?;
 
-    if primary_contains_valid_state(&paths.primary)? {
+    if primary_is_valid {
         std::fs::rename(&paths.primary, &paths.backup)?;
         hook(SaveCheckpoint::BackupReplaced)?;
     }
 
+    validate_staged_temporary(&paths.temporary, &temporary_metadata)?;
+    drop(temporary);
     std::fs::rename(&paths.temporary, &paths.primary)?;
     hook(SaveCheckpoint::PrimaryReplaced)?;
     sync_parent_directory(&paths.primary)
@@ -289,9 +417,12 @@ pub fn load_state(paths: &ProgressPaths) -> std::io::Result<LoadOutcome> {
         let bytes = match read_candidate(path, source == RecoverySource::PreMigration) {
             Ok(Some(bytes)) => bytes,
             Ok(None) => continue,
+            Err(CandidateReadError::RegularFile(error)) if source == RecoverySource::Primary => {
+                return Err(error);
+            }
             Err(error) => {
                 if recovery_error.is_none() {
-                    recovery_error = Some(error);
+                    recovery_error = Some(error.into_inner());
                 }
                 continue;
             }
@@ -355,6 +486,29 @@ mod tests {
 
     struct CurrentDirectory(std::path::PathBuf);
 
+    #[cfg(unix)]
+    struct RestoredPermissions {
+        path: std::path::PathBuf,
+        permissions: std::fs::Permissions,
+    }
+
+    #[cfg(unix)]
+    impl RestoredPermissions {
+        fn new(path: &std::path::Path) -> Self {
+            Self {
+                path: path.to_path_buf(),
+                permissions: std::fs::metadata(path).unwrap().permissions(),
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    impl Drop for RestoredPermissions {
+        fn drop(&mut self) {
+            std::fs::set_permissions(&self.path, self.permissions.clone()).unwrap();
+        }
+    }
+
     impl CurrentDirectory {
         fn set(path: &std::path::Path) -> Self {
             let original = std::env::current_dir().unwrap();
@@ -404,6 +558,106 @@ mod tests {
         save_state(&paths, &new).unwrap();
         assert_eq!(load_exact(&paths.primary).unwrap(), new);
         assert_eq!(load_exact(&paths.backup).unwrap(), old);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unreadable_valid_primary_is_not_replaced_from_an_older_backup() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let (_dir, paths) = test_paths("unreadable-primary");
+        let primary = encode_state(&state_with_rank(4)).unwrap();
+        let backup = encode_state(&state_with_rank(3)).unwrap();
+        std::fs::write(&paths.primary, &primary).unwrap();
+        std::fs::write(&paths.backup, &backup).unwrap();
+
+        let error = {
+            let _permissions = RestoredPermissions::new(&paths.primary);
+            let mut unreadable = std::fs::metadata(&paths.primary).unwrap().permissions();
+            unreadable.set_mode(0);
+            std::fs::set_permissions(&paths.primary, unreadable).unwrap();
+            load_state(&paths).unwrap_err()
+        };
+
+        assert_eq!(error.kind(), std::io::ErrorKind::PermissionDenied);
+        assert_eq!(std::fs::read(&paths.primary).unwrap(), primary);
+        assert_eq!(std::fs::read(&paths.backup).unwrap(), backup);
+        assert!(!paths.temporary.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn save_rejects_temporary_symlink_without_clobbering_its_target() {
+        use std::os::unix::fs::symlink;
+
+        let (dir, paths) = test_paths("temporary-symlink-sentinel");
+        let primary = encode_state(&state_with_rank(3)).unwrap();
+        let sentinel_path = dir.0.join("sentinel");
+        let sentinel = b"unrelated sentinel data";
+        std::fs::write(&paths.primary, &primary).unwrap();
+        std::fs::write(&sentinel_path, sentinel).unwrap();
+        symlink(&sentinel_path, &paths.temporary).unwrap();
+
+        let error = save_state(&paths, &state_with_rank(4)).unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+        assert_eq!(std::fs::read(&paths.primary).unwrap(), primary);
+        assert_eq!(std::fs::read(&sentinel_path).unwrap(), sentinel);
+        assert_eq!(std::fs::read_link(&paths.temporary).unwrap(), sentinel_path);
+        assert!(!paths.backup.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn save_rejects_temporary_symlink_without_clobbering_backup() {
+        use std::os::unix::fs::symlink;
+
+        let (_dir, paths) = test_paths("temporary-symlink-backup");
+        let primary = encode_state(&state_with_rank(3)).unwrap();
+        let backup = encode_state(&state_with_rank(2)).unwrap();
+        std::fs::write(&paths.primary, &primary).unwrap();
+        std::fs::write(&paths.backup, &backup).unwrap();
+        symlink(&paths.backup, &paths.temporary).unwrap();
+
+        let error = save_state(&paths, &state_with_rank(4)).unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+        assert_eq!(std::fs::read(&paths.primary).unwrap(), primary);
+        assert_eq!(std::fs::read(&paths.backup).unwrap(), backup);
+        assert_eq!(std::fs::read_link(&paths.temporary).unwrap(), paths.backup);
+    }
+
+    #[test]
+    fn save_retries_after_regular_temporary_when_stable_primary_exists() {
+        let (_dir, paths) = test_paths("regular-temporary-retry");
+        save_state(&paths, &state_with_rank(2)).unwrap();
+        save_state_with_hook(&paths, &state_with_rank(3), |checkpoint| {
+            if checkpoint == SaveCheckpoint::TemporarySynced {
+                return Err(std::io::Error::other("simulated interruption"));
+            }
+            Ok(())
+        })
+        .unwrap_err();
+
+        save_state(&paths, &state_with_rank(4)).unwrap();
+
+        assert_eq!(load_exact(&paths.primary).unwrap().rank, 4);
+        assert_eq!(load_exact(&paths.backup).unwrap().rank, 2);
+        assert!(!paths.temporary.exists());
+    }
+
+    #[test]
+    fn save_preserves_regular_temporary_without_another_stable_state() {
+        let (_dir, paths) = test_paths("regular-temporary-no-stable-state");
+        let temporary = encode_state(&state_with_rank(3)).unwrap();
+        std::fs::write(&paths.temporary, &temporary).unwrap();
+
+        let error = save_state(&paths, &state_with_rank(4)).unwrap_err();
+
+        assert_eq!(error.kind(), std::io::ErrorKind::AlreadyExists);
+        assert_eq!(std::fs::read(&paths.temporary).unwrap(), temporary);
+        assert!(!paths.primary.exists());
+        assert!(!paths.backup.exists());
     }
 
     #[test]
