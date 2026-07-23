@@ -404,6 +404,35 @@ fn scan_and_commit_progress(
     Ok((event, false))
 }
 
+fn scan_and_commit_progress_with_authoritative_rebuild(
+    current: &mut ProgressState,
+    rebuild_pending: bool,
+    claude_dir: &std::path::Path,
+    codex_dir: &std::path::Path,
+    persist_normal: impl FnOnce(&ProgressState) -> Result<(), String>,
+    persist_rebuild: impl FnOnce(&ProgressState) -> Result<ProgressState, String>,
+) -> Result<(Option<Progress>, bool), String> {
+    if !rebuild_pending {
+        return scan_and_commit_progress(
+            current,
+            false,
+            claude_dir,
+            codex_dir,
+            persist_normal,
+            |_| unreachable!("ordinary scans do not publish an output rebuild"),
+        );
+    }
+
+    let mut candidate = ProgressState::default();
+    scan_claude_dir(claude_dir, &mut candidate.tally);
+    scan_codex_dir(codex_dir, &mut candidate.tally);
+    recalculate_from_output_history(&mut candidate);
+    let authoritative = persist_rebuild(&candidate)?;
+    let view = progress_view(&authoritative);
+    *current = authoritative;
+    Ok((Some(view), true))
+}
+
 fn require_completed_output_rebuild(rebuild_pending: bool) -> Result<(), String> {
     if rebuild_pending {
         Err("output history rebuild is still in progress".into())
@@ -481,7 +510,7 @@ pub fn spawn_progress_watcher(app: tauri::AppHandle) {
                 let store = app.state::<ProgressStore>();
                 let mut current = store.state.lock().unwrap();
                 let rebuild_pending = store.output_rebuild_pending();
-                match scan_and_commit_progress(
+                match scan_and_commit_progress_with_authoritative_rebuild(
                     &mut current,
                     rebuild_pending,
                     &claude_dir,
@@ -492,6 +521,7 @@ pub fn spawn_progress_watcher(app: tauri::AppHandle) {
                     },
                     |candidate| {
                         publish_rebuilt_state(&store.paths, candidate)
+                            .map(|outcome| outcome.into_authoritative_state())
                             .map_err(|error| format!("progress persistence failed: {error}"))
                     },
                 ) {

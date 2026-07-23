@@ -707,14 +707,12 @@ fn validate_staged_temporary(
     Ok(())
 }
 
-fn save_state_with_hook(
+fn save_state_with_hook_locked(
     paths: &ProgressPaths,
     state: &ProgressState,
     mut hook: impl FnMut(SaveCheckpoint) -> std::io::Result<()>,
 ) -> std::io::Result<()> {
     let bytes = encode_state(state)?;
-    std::fs::create_dir_all(parent_directory(&paths.primary))?;
-    let _publication_lock = acquire_publication_lock(paths)?;
     let primary_is_valid = primary_contains_valid_state(&paths.primary)?;
     let mut temporary = open_save_temporary(paths, primary_is_valid)?;
     let temporary_metadata = temporary.metadata()?;
@@ -750,6 +748,16 @@ fn save_state_with_hook(
     require_published_primary_visible(paths, &bytes)
 }
 
+fn save_state_with_hook(
+    paths: &ProgressPaths,
+    state: &ProgressState,
+    hook: impl FnMut(SaveCheckpoint) -> std::io::Result<()>,
+) -> std::io::Result<()> {
+    std::fs::create_dir_all(parent_directory(&paths.primary))?;
+    let _publication_lock = acquire_publication_lock(paths)?;
+    save_state_with_hook_locked(paths, state, hook)
+}
+
 pub fn save_state(paths: &ProgressPaths, state: &ProgressState) -> std::io::Result<()> {
     save_state_with_hook(paths, state, |_| Ok(()))
 }
@@ -776,7 +784,21 @@ fn snapshot_for_source(
 
 enum MigrationPublicationStatus {
     Pending,
-    AlreadyPublished,
+    AlreadyPublished(ProgressState),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum RebuildPublicationOutcome {
+    Published(ProgressState),
+    AlreadyPublished(ProgressState),
+}
+
+impl RebuildPublicationOutcome {
+    pub fn into_authoritative_state(self) -> ProgressState {
+        match self {
+            Self::Published(state) | Self::AlreadyPublished(state) => state,
+        }
+    }
 }
 
 fn require_any_migration_snapshot(paths: &ProgressPaths) -> std::io::Result<()> {
@@ -802,7 +824,6 @@ fn require_any_migration_snapshot(paths: &ProgressPaths) -> std::io::Result<()> 
 
 fn require_matching_migration_snapshot(
     paths: &ProgressPaths,
-    rebuilt: &ProgressState,
 ) -> std::io::Result<MigrationPublicationStatus> {
     let candidates = [(&paths.primary, true), (&paths.backup, false)];
     let mut recovery_error = None;
@@ -824,9 +845,9 @@ fn require_matching_migration_snapshot(
                 snapshot_for_source(paths, &bytes, source_schema)?;
                 return Ok(MigrationPublicationStatus::Pending);
             }
-            Ok(DecodedState::Current(state)) if is_primary && state == *rebuilt => {
+            Ok(DecodedState::Current(state)) if is_primary => {
                 require_any_migration_snapshot(paths)?;
-                return Ok(MigrationPublicationStatus::AlreadyPublished);
+                return Ok(MigrationPublicationStatus::AlreadyPublished(state));
             }
             Ok(DecodedState::Current(_)) => {
                 return Err(invalid_data(
@@ -895,10 +916,11 @@ fn require_published_primary_visible(
 fn committed_or_error(
     paths: &ProgressPaths,
     expected_bytes: &[u8],
+    state: &ProgressState,
     error: std::io::Error,
-) -> std::io::Result<()> {
+) -> std::io::Result<RebuildPublicationOutcome> {
     if published_primary_is_visible(paths, expected_bytes)? {
-        Ok(())
+        Ok(RebuildPublicationOutcome::Published(state.clone()))
     } else {
         Err(error)
     }
@@ -908,7 +930,7 @@ fn publish_rebuilt_state_with_hook(
     paths: &ProgressPaths,
     state: &ProgressState,
     mut hook: impl FnMut(RebuildCheckpoint) -> std::io::Result<()>,
-) -> std::io::Result<()> {
+) -> std::io::Result<RebuildPublicationOutcome> {
     let bytes = encode_state(state)?;
     let DecodedState::Current(encoded_state) = decode_state(&bytes)? else {
         return Err(invalid_data("rebuilt progress is not schema v3"));
@@ -921,11 +943,10 @@ fn publish_rebuilt_state_with_hook(
 
     std::fs::create_dir_all(parent_directory(&paths.primary))?;
     let _publication_lock = acquire_publication_lock(paths)?;
-    if matches!(
-        require_matching_migration_snapshot(paths, state)?,
-        MigrationPublicationStatus::AlreadyPublished
-    ) {
-        return require_published_primary_visible(paths, &bytes);
+    if let MigrationPublicationStatus::AlreadyPublished(authoritative) =
+        require_matching_migration_snapshot(paths)?
+    {
+        return Ok(RebuildPublicationOutcome::AlreadyPublished(authoritative));
     }
 
     let (temporary_path, mut temporary) = create_publication_temporary(paths)?;
@@ -958,24 +979,27 @@ fn publish_rebuilt_state_with_hook(
     hook(RebuildCheckpoint::TemporarySynced)?;
 
     validate_staged_temporary(&temporary_path.0, &temporary_metadata)?;
-    if matches!(
-        require_matching_migration_snapshot(paths, state)?,
-        MigrationPublicationStatus::AlreadyPublished
-    ) {
-        return require_published_primary_visible(paths, &bytes);
+    if let MigrationPublicationStatus::AlreadyPublished(authoritative) =
+        require_matching_migration_snapshot(paths)?
+    {
+        return Ok(RebuildPublicationOutcome::AlreadyPublished(authoritative));
     }
     drop(temporary);
     std::fs::rename(&temporary_path.0, &paths.primary)?;
     if let Err(error) = hook(RebuildCheckpoint::PrimaryReplaced) {
-        return committed_or_error(paths, &bytes, error);
+        return committed_or_error(paths, &bytes, state, error);
     }
     if let Err(error) = sync_parent_directory(&paths.primary) {
-        return committed_or_error(paths, &bytes, error);
+        return committed_or_error(paths, &bytes, state, error);
     }
-    require_published_primary_visible(paths, &bytes)
+    require_published_primary_visible(paths, &bytes)?;
+    Ok(RebuildPublicationOutcome::Published(state.clone()))
 }
 
-pub fn publish_rebuilt_state(paths: &ProgressPaths, state: &ProgressState) -> std::io::Result<()> {
+pub fn publish_rebuilt_state(
+    paths: &ProgressPaths,
+    state: &ProgressState,
+) -> std::io::Result<RebuildPublicationOutcome> {
     publish_rebuilt_state_with_hook(paths, state, |_| Ok(()))
 }
 
@@ -1038,7 +1062,7 @@ fn recover_temporary(paths: &ProgressPaths) -> std::io::Result<Option<LoadOutcom
     }))
 }
 
-pub fn load_state(paths: &ProgressPaths) -> std::io::Result<LoadOutcome> {
+fn load_state_locked(paths: &ProgressPaths) -> std::io::Result<LoadOutcome> {
     let candidates = [
         (&paths.primary, RecoverySource::Primary, None),
         (&paths.backup, RecoverySource::Backup, None),
@@ -1081,7 +1105,7 @@ pub fn load_state(paths: &ProgressPaths) -> std::io::Result<LoadOutcome> {
                     continue;
                 }
                 if source != RecoverySource::Primary {
-                    save_state(paths, &state)?;
+                    save_state_with_hook_locked(paths, &state, |_| Ok(()))?;
                 }
                 remove_temporary(&paths.temporary)?;
                 return Ok(LoadOutcome {
@@ -1151,6 +1175,12 @@ pub fn load_state(paths: &ProgressPaths) -> std::io::Result<LoadOutcome> {
         source: RecoverySource::New,
         needs_output_rebuild: false,
     })
+}
+
+pub fn load_state(paths: &ProgressPaths) -> std::io::Result<LoadOutcome> {
+    std::fs::create_dir_all(parent_directory(&paths.primary))?;
+    let _publication_lock = acquire_publication_lock(paths)?;
+    load_state_locked(paths)
 }
 
 #[cfg(test)]
