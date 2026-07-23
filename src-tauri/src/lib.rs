@@ -103,7 +103,10 @@ pub fn run() {
 
             // Progression persists per-user, so the store loads after the
             // app handle exists (app_data_dir) rather than with the builder.
-            app.manage(progress::ProgressStore::load(app.handle()));
+            let progress_store = progress::ProgressStore::load(app.handle()).map_err(|error| {
+                std::io::Error::other(format!("progress recovery failed: {error}"))
+            })?;
+            app.manage(progress_store);
             poll::spawn_pollers(app.handle().clone());
             activity::spawn_activity_watcher(app.handle().clone());
             progress::spawn_progress_watcher(app.handle().clone());

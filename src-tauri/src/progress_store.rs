@@ -13,6 +13,28 @@ pub struct ProgressPaths {
     pub temporary: std::path::PathBuf,
 }
 
+pub struct ProgressStore {
+    pub(crate) state: std::sync::Mutex<ProgressState>,
+    pub(crate) paths: ProgressPaths,
+}
+
+impl ProgressStore {
+    pub fn load(app: &tauri::AppHandle) -> std::io::Result<Self> {
+        use tauri::Manager as _;
+        let primary = app
+            .path()
+            .app_data_dir()
+            .map_err(std::io::Error::other)?
+            .join("progress.json");
+        let paths = ProgressPaths::from_primary(primary);
+        let outcome = load_state(&paths)?;
+        Ok(Self {
+            state: std::sync::Mutex::new(outcome.state),
+            paths,
+        })
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RecoverySource {
     Primary,

@@ -1,3 +1,6 @@
+use crate::progress_store::save_state;
+pub use crate::progress_store::ProgressStore;
+
 /// Cosmetic tiers, indexed by rank. Rank 0 is the unadorned starting state;
 /// every later tier only changes cosmetics, never behavior.
 pub const TIERS: [&str; 14] = [
@@ -274,55 +277,39 @@ pub fn try_prestige(state: &mut ProgressState) -> Result<(), String> {
     Ok(())
 }
 
-pub fn save_progress(path: &std::path::Path, state: &ProgressState) -> std::io::Result<()> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
+fn commit_candidate<F>(
+    current: &mut ProgressState,
+    candidate: ProgressState,
+    persist: F,
+) -> Result<Progress, String>
+where
+    F: FnOnce(&ProgressState) -> Result<(), String>,
+{
+    persist(&candidate)?;
+    let view = progress_view(&candidate);
+    *current = candidate;
+    Ok(view)
+}
+
+fn commit_scanned_candidate<F>(
+    current: &mut ProgressState,
+    candidate: ProgressState,
+    persist: F,
+) -> Result<Option<Progress>, String>
+where
+    F: FnOnce(&ProgressState) -> Result<(), String>,
+{
+    if candidate == *current {
+        return Ok(None);
     }
-    let json = serde_json::to_vec(state)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-    std::fs::write(path, json)
-}
-
-/// Missing or corrupt file → Default. Progression is cosmetic, so starting
-/// fresh beats refusing to boot; the next scan rebuilds the tally anyway.
-pub fn load_progress(path: &std::path::Path) -> ProgressState {
-    std::fs::read(path)
-        .ok()
-        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-        .unwrap_or_default()
-}
-
-pub struct ProgressStore(pub std::sync::Mutex<ProgressState>);
-
-impl ProgressStore {
-    /// Loads persisted progression for `app.manage()` at startup.
-    pub fn load(app: &tauri::AppHandle) -> Self {
-        let state = store_path(app)
-            .map(|path| load_progress(&path))
-            .unwrap_or_default();
-        Self(std::sync::Mutex::new(state))
-    }
-}
-
-fn store_path(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
-    use tauri::Manager as _;
-    app.path()
-        .app_data_dir()
-        .ok()
-        .map(|dir| dir.join("progress.json"))
-}
-
-fn persist_and_emit(app: &tauri::AppHandle, state: &ProgressState, view: &Progress) {
-    use tauri::Emitter as _;
-    if let Some(path) = store_path(app) {
-        let _ = save_progress(&path, state);
-    }
-    let _ = app.emit("progress-update", view);
+    let previous_view = progress_view(current);
+    let view = commit_candidate(current, candidate, persist)?;
+    Ok((view != previous_view).then_some(view))
 }
 
 #[tauri::command]
 pub fn get_progress(store: tauri::State<'_, ProgressStore>) -> Progress {
-    progress_view(&store.0.lock().unwrap())
+    progress_view(&store.state.lock().unwrap())
 }
 
 #[tauri::command]
@@ -330,10 +317,20 @@ pub fn rank_up(
     app: tauri::AppHandle,
     store: tauri::State<'_, ProgressStore>,
 ) -> Result<Progress, String> {
-    let state = &mut *store.0.lock().unwrap();
-    try_rank_up(state)?;
-    let view = progress_view(state);
-    persist_and_emit(&app, state, &view);
+    let view = {
+        let mut current = store
+            .state
+            .lock()
+            .map_err(|_| "progress state lock poisoned".to_string())?;
+        let mut candidate = current.clone();
+        try_rank_up(&mut candidate)?;
+        commit_candidate(&mut current, candidate, |candidate| {
+            save_state(&store.paths, candidate)
+                .map_err(|error| format!("progress persistence failed: {error}"))
+        })?
+    };
+    use tauri::Emitter as _;
+    let _ = app.emit("progress-update", &view);
     Ok(view)
 }
 
@@ -342,17 +339,26 @@ pub fn prestige(
     app: tauri::AppHandle,
     store: tauri::State<'_, ProgressStore>,
 ) -> Result<Progress, String> {
-    let state = &mut *store.0.lock().unwrap();
-    try_prestige(state)?;
-    let view = progress_view(state);
-    persist_and_emit(&app, state, &view);
+    let view = {
+        let mut current = store
+            .state
+            .lock()
+            .map_err(|_| "progress state lock poisoned".to_string())?;
+        let mut candidate = current.clone();
+        try_prestige(&mut candidate)?;
+        commit_candidate(&mut current, candidate, |candidate| {
+            save_state(&store.paths, candidate)
+                .map_err(|error| format!("progress persistence failed: {error}"))
+        })?
+    };
+    use tauri::Emitter as _;
+    let _ = app.emit("progress-update", &view);
     Ok(view)
 }
 
 /// Rescans the real session directories every 60s (first tick immediate, so
-/// history reconciles at startup) and persists + emits only when the derived
-/// view changes — sub-XP token growth stays silent. Skipping the save on
-/// quiet ticks is safe because tokens and cursors are always saved together.
+/// history reconciles at startup). Every tally/cursor delta is persisted,
+/// while sub-XP token growth remains silent because only visible changes emit.
 pub fn spawn_progress_watcher(app: tauri::AppHandle) {
     tauri::async_runtime::spawn(async move {
         use tauri::Manager as _;
@@ -361,24 +367,32 @@ pub fn spawn_progress_watcher(app: tauri::AppHandle) {
         };
         let claude_dir = home.join(".claude/projects");
         let codex_dir = home.join(".codex/sessions");
-        let mut last: Option<Progress> = None;
         let mut tick = tokio::time::interval(std::time::Duration::from_secs(60));
         loop {
             tick.tick().await;
-            let changed = {
+            let event = {
                 let store = app.state::<ProgressStore>();
-                let state = &mut *store.0.lock().unwrap();
-                scan_claude_dir(&claude_dir, &mut state.tally);
-                scan_codex_dir(&codex_dir, &mut state.tally);
-                if !state.initialized {
-                    initialize_baseline(state);
+                let mut current = store.state.lock().unwrap();
+                let mut candidate = current.clone();
+                scan_claude_dir(&claude_dir, &mut candidate.tally);
+                scan_codex_dir(&codex_dir, &mut candidate.tally);
+                if !candidate.initialized {
+                    initialize_baseline(&mut candidate);
                 }
-                let view = progress_view(state);
-                (last.as_ref() != Some(&view)).then(|| (state.clone(), view))
+                match commit_scanned_candidate(&mut current, candidate, |candidate| {
+                    save_state(&store.paths, candidate)
+                        .map_err(|error| format!("progress persistence failed: {error}"))
+                }) {
+                    Ok(event) => event,
+                    Err(error) => {
+                        eprintln!("{error}");
+                        None
+                    }
+                }
             };
-            if let Some((state, view)) = changed {
-                persist_and_emit(&app, &state, &view);
-                last = Some(view);
+            if let Some(view) = event {
+                use tauri::Emitter as _;
+                let _ = app.emit("progress-update", &view);
             }
         }
     });
@@ -516,6 +530,58 @@ mod tests {
     }
 
     #[test]
+    fn failed_persistence_does_not_commit_candidate() {
+        let mut current = state_with(800_000, 0, 0, 0);
+        current
+            .tally
+            .claude_offsets
+            .insert("claude.jsonl".into(), 123);
+        current
+            .tally
+            .codex_offsets
+            .insert("codex.jsonl".into(), 456);
+        current.tally.codex_totals.insert("codex.jsonl".into(), 789);
+        let before = current.clone();
+        let mut candidate = current.clone();
+        try_rank_up(&mut candidate).unwrap();
+        candidate.tally.total_tokens += 42;
+        candidate
+            .tally
+            .claude_offsets
+            .insert("claude.jsonl".into(), 999);
+
+        let result = commit_candidate(&mut current, candidate, |_| Err("disk full".into()));
+
+        assert!(result.is_err());
+        assert_eq!(current, before);
+    }
+
+    #[test]
+    fn scanned_sub_xp_changes_are_persisted_without_visible_event() {
+        let mut current = state_with(1_000, 0, 0, 0);
+        let old_view = progress_view(&current);
+        let mut candidate = current.clone();
+        candidate.tally.total_tokens += 42;
+        candidate
+            .tally
+            .claude_offsets
+            .insert("claude.jsonl".into(), 321);
+        assert_eq!(progress_view(&candidate), old_view);
+        let persisted = std::cell::RefCell::new(None);
+
+        let event =
+            commit_scanned_candidate(&mut current, candidate.clone(), |state: &ProgressState| {
+                persisted.replace(Some(state.clone()));
+                Ok(())
+            })
+            .unwrap();
+
+        assert_eq!(persisted.into_inner(), Some(candidate.clone()));
+        assert_eq!(current, candidate);
+        assert_eq!(event, None);
+    }
+
+    #[test]
     fn prestige_resets_baseline_and_steepens() {
         let mut s = state_with(2_000_000_000, 13, 0, 0);
         assert!(try_prestige(&mut s).is_ok());
@@ -524,14 +590,6 @@ mod tests {
         assert_eq!((v.xp, v.level), (0, 1));
         let mut not_godlike = state_with(2_000_000_000, 12, 0, 0);
         assert!(try_prestige(&mut not_godlike).is_err());
-    }
-
-    #[test]
-    fn persistence_roundtrips() {
-        let s = state_with(42, 3, 1, 7);
-        let path = std::env::temp_dir().join(format!("mana-progress-{}.json", std::process::id()));
-        save_progress(&path, &s).unwrap();
-        assert_eq!(load_progress(&path), s); // load returns Default on missing/corrupt file
     }
 
     #[test]
