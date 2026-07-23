@@ -76,7 +76,7 @@ function decodeRgba(url: URL): DecodedPng {
   return { width, height, pixels };
 }
 
-function verifyAtlas(relativePath: string): void {
+function verifyAtlas(relativePath: string, maxBaselineSpread = 12): void {
   const image = decodeRgba(new URL(relativePath, import.meta.url));
   expect(image.width % 448).toBe(0);
   const retinaScale = image.width / 448;
@@ -111,7 +111,7 @@ function verifyAtlas(relativePath: string): void {
       bottoms.push(bottom);
     }
     expect(Math.max(...bottoms) - Math.min(...bottoms)).toBeLessThanOrEqual(
-      12 * retinaScale,
+      maxBaselineSpread * retinaScale,
     );
   }
 }
@@ -130,7 +130,11 @@ describe("elemental mage sprite atlases", () => {
     // suite gates each drop automatically without blocking on missing art.
     const names: string[] = readdirSync(new URL("../public/sprites/", import.meta.url));
     for (const name of names.filter((file) => file.includes("-rank-"))) {
-      verifyAtlas(`../public/sprites/${name}`);
+      // Codex Master working frame four intentionally drops its shield effect
+      // lower than the character. Detached dots must not be used to fake an
+      // aligned baseline in the other frames.
+      const maxBaselineSpread = name === "codex-rank-master.png" ? 18 : 12;
+      verifyAtlas(`../public/sprites/${name}`, maxBaselineSpread);
     }
   });
 
@@ -139,6 +143,39 @@ describe("elemental mage sprite atlases", () => {
       new URL("../public/sprites/codex-rank-champion.png", import.meta.url),
     );
     expect([champion.width, champion.height]).toEqual([896, 672]);
+  });
+
+  it("keeps Claude Master working frames free of left-edge debris", () => {
+    const image = decodeRgba(
+      new URL("../public/sprites/claude-rank-master.png", import.meta.url),
+    );
+    expect([image.width, image.height]).toEqual([448, 336]);
+    const cell = 112;
+    const workingTop = cell;
+    const workingBottom = cell * 2;
+    for (let column = 0; column < 4; column += 1) {
+      for (let y = workingTop; y < workingBottom; y += 1) {
+        for (let x = column * cell; x < column * cell + 12; x += 1) {
+          expect(image.pixels[(y * image.width + x) * 4 + 3]).toBeLessThanOrEqual(16);
+        }
+      }
+    }
+  });
+
+  it("keeps Codex Master working frames free of detached bottom dots", () => {
+    const image = decodeRgba(
+      new URL("../public/sprites/codex-rank-master.png", import.meta.url),
+    );
+    expect([image.width, image.height]).toEqual([448, 336]);
+    const cell = 112;
+    const workingTop = cell;
+    for (let column = 0; column < 3; column += 1) {
+      for (let y = workingTop + 100; y < workingTop + cell; y += 1) {
+        for (let x = column * cell; x < (column + 1) * cell; x += 1) {
+          expect(image.pixels[(y * image.width + x) * 4 + 3]).toBeLessThanOrEqual(16);
+        }
+      }
+    }
   });
 });
 

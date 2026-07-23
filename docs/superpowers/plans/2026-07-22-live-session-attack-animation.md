@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make Claude and Codex attack only while their local session logs are actively changing, keep Mana quiet on launch, and remove the detached left-edge debris from Claude's Master working frames.
+**Goal:** Make Claude and Codex attack only while their local session logs are actively changing, keep Mana quiet on launch, and remove detached debris from both Master working atlases.
 
 **Architecture:** Replace process-presence checks with a pure per-provider fingerprint tracker that observes JSONL metadata, seeds a quiet startup baseline, and holds activity for 2.5 seconds after a write. A Tauri-managed store exposes the current pair to the frontend and emits the existing event on state changes. Clean the single affected atlas behind a failing alpha-strip regression test.
 
@@ -26,8 +26,9 @@
 - Modify `src-tauri/src/activity.rs`: pure JSONL fingerprint scanning, provider activity tracker, managed activity state, watcher, and Rust tests.
 - Modify `src-tauri/src/lib.rs`: register the managed activity store before starting the watcher.
 - Modify `README.md`: describe session-write activity detection rather than process presence.
-- Modify `src/sprites.test.ts`: assert the Claude Master working-row left strip is transparent.
-- Modify `public/sprites/claude-rank-master.png`: remove only detached working-row fragments.
+- Modify `src/sprites.test.ts`: assert the Claude Master left strip and Codex Master bottom-dot region are transparent.
+- Modify `public/sprites/claude-rank-master.png`: remove only detached left fragments.
+- Modify `public/sprites/codex-rank-master.png`: remove only detached bottom dots.
 
 ### Task 1: Pure Session-Write Activity Tracker
 
@@ -353,15 +354,16 @@ git add src-tauri/src/activity.rs src-tauri/src/lib.rs README.md
 git commit -m "fix: animate attacks only during live work"
 ```
 
-### Task 3: Remove Claude Master Left-Edge Debris
+### Task 3: Remove Master Atlas Debris
 
 **Files:**
 - Modify: `src/sprites.test.ts`
 - Modify: `public/sprites/claude-rank-master.png`
+- Modify: `public/sprites/codex-rank-master.png`
 
 **Interfaces:**
 - Consumes: existing `decodeRgba` PNG helper in `src/sprites.test.ts`.
-- Produces: a 448x336 RGBA atlas whose second-row first 12 source pixels in every cell are transparent.
+- Produces: 448x336 RGBA atlases with Claude's second-row first 12 source pixels transparent and Codex's detached bottom dots removed from the first two working frames.
 
 - [ ] **Step 1: Add the failing alpha-strip regression test**
 

@@ -6,8 +6,9 @@ Mana should play a provider's attack row only while that provider is actively
 writing session activity after a prompt. Merely having Claude or Codex open,
 or relaunching Mana while an idle session exists, must not trigger an attack.
 The detached colored fragment visible to the left of Claude's Master attack
-frames must also be removed without changing the character, aura, layout, or
-other rank artwork.
+frames and the detached blue dots below Codex's Master attack frames must also
+be removed without changing either character, aura, layout, or other rank
+artwork.
 
 ## Confirmed Root Causes
 
@@ -18,8 +19,10 @@ an idle session. `get_activity` also repeats that process check on every Mana
 launch, which explains the immediate attack after a reload.
 
 The Claude Master atlas contains separate opaque pixel islands in the far-left
-strip of three working-row cells. They are stored in the PNG itself, so allowing
-the sprite to overflow correctly exposes them beside the intended character.
+strip of three working-row cells. The Codex Master atlas contains separate
+blue/white pixel islands below the intended content in its first two working
+frames. They are stored in the PNGs themselves, so allowing the sprites to
+overflow correctly exposes them beside the intended characters.
 
 ## Selected Activity Signal
 
@@ -66,7 +69,7 @@ filesystem metadata.
 The old process-name matcher and process polling are removed. No new Rust
 dependency is required.
 
-## Claude Master Atlas Cleanup
+## Master Atlas Cleanup
 
 Clean only the detached far-left pixel islands in the working row of
 `public/sprites/claude-rank-master.png`. Preserve the 448x336 RGBA atlas, its
@@ -74,6 +77,11 @@ Clean only the detached far-left pixel islands in the working row of
 effects, baselines, colors, and every other rank sheet. The visible left strip
 of each cleaned Master working cell must be fully transparent; the intended
 art begins farther inside each cell.
+
+Clean only the detached bottom pixel islands in the first two working frames of
+`public/sprites/codex-rank-master.png`. Preserve Codex's character, staff,
+shield, portal, lightning, and the fourth working frame whose intended art
+extends lower in its cell.
 
 ## Tests
 
@@ -87,9 +95,10 @@ Rust unit tests will prove:
 - Claude and Codex trackers remain independent;
 - missing directories remain quiet instead of failing the watcher.
 
-The existing PNG decoder test will add a Master-specific assertion that the
-far-left strip of every Claude working-row cell contains no visible alpha while
-the normal atlas geometry and visibility checks continue to pass.
+The existing PNG decoder test will add Master-specific assertions that the
+far-left strip of every Claude working-row cell and the detached bottom region
+of the first three Codex working-row cells contain no visible alpha while the
+normal atlas geometry and visibility checks continue to pass.
 
 The full Rust and frontend test suites, production frontend build, and Tauri
 release build must pass. The rebuilt app will then be launched locally for a
