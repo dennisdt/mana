@@ -107,7 +107,7 @@ body {
   grid-template-columns: 70px minmax(0, 1fr);
   min-width: 0;
   overflow: visible;
-  gap: 10px;
+  gap: 24px;
   padding: 6px 0 14px;
 }
 
@@ -336,29 +336,56 @@ body {
   justify-content: center;
 }
 
-.familiar-slot::before {
+.aura {
   position: absolute;
   z-index: 1;
   top: 50%;
   left: 50%;
-  width: 72px;
-  height: 72px;
-  border-radius: 50%;
-  background: radial-gradient(
-    circle at center,
-    var(--glow) 0,
-    color-mix(in srgb, var(--glow) 42%, transparent) 38%,
-    transparent 72%
-  );
-  content: "";
-  opacity: 0.34;
+  width: 96px;
+  height: 96px;
+  background-image: var(--aura-atlas, none);
+  background-repeat: no-repeat;
+  background-size: calc(var(--aura-frame-count, 1) * 96px) 96px;
+  image-rendering: pixelated;
   pointer-events: none;
   transform: translate(-50%, -50%);
-  transition: opacity 0.24s ease;
+  zoom: var(--sprite-resolution-scale, 1);
 }
 
-.provider-card[data-working] .familiar-slot::before {
-  opacity: 0.66;
+.aura[hidden] {
+  display: none;
+}
+
+.aura[data-frame="0"] {
+  background-position-x: 0;
+}
+
+.aura[data-frame="1"] {
+  background-position-x: -96px;
+}
+
+.aura[data-frame="2"] {
+  background-position-x: -192px;
+}
+
+.aura[data-frame="3"] {
+  background-position-x: -288px;
+}
+
+.aura[data-frame="4"] {
+  background-position-x: -384px;
+}
+
+.aura[data-frame="5"] {
+  background-position-x: -480px;
+}
+
+.aura[data-frame="6"] {
+  background-position-x: -576px;
+}
+
+.aura[data-frame="7"] {
+  background-position-x: -672px;
 }
 
 .provider-content,
@@ -550,7 +577,7 @@ body {
 .sprite::before {
   position: absolute;
   top: calc(50% + var(--sprite-y-offset, 0px));
-  left: 50%;
+  left: calc(50% + var(--sprite-x-offset, 0px));
   width: 68px;
   height: 68px;
   background-repeat: no-repeat;
@@ -580,11 +607,14 @@ body {
 
 .sprite.claude-mage {
   --sprite-sheet: url("/sprites/claude-fire-poison.png");
+  --sprite-x-offset: -4px;
+  --sprite-y-offset: 10px;
 }
 
 .sprite.codex-mage {
   --sprite-sheet: url("/sprites/codex-ice-lightning.png");
-  --sprite-y-offset: 4px;
+  --sprite-x-offset: -3px;
+  --sprite-y-offset: 8px;
 }
 
 .sprite[data-state="idle"]::before {
@@ -1152,6 +1182,10 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .aura[data-frame] {
+    background-position-x: 0;
+  }
+
   .sprite[data-frame]::before {
     background-position-x: 0;
   }

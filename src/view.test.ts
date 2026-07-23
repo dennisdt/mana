@@ -13,7 +13,11 @@ const weeklyOnly = {
 describe("cardHtml", () => {
   it("renders a provider-owned familiar and weekly-only row", () => {
     const html = cardHtml(weeklyOnly, "codex");
+    expect(html).toContain(
+      '<div class="aura" data-provider="codex" data-frame="0" aria-hidden="true"></div>',
+    );
     expect(html).toContain('class="sprite codex-mage"');
+    expect(html.indexOf('class="aura"')).toBeLessThan(html.indexOf('class="sprite'));
     expect(html).toContain('data-provider="codex"');
     expect(html).toContain('data-state="idle" data-frame="0"');
     expect(html).toContain('class="lbl">Weekly</span>');
@@ -35,6 +39,7 @@ describe("cardHtml", () => {
 
   it("keeps the provider roster shell when data is absent", () => {
     const html = cardHtml(undefined, "claude");
+    expect(html).toContain('class="aura"');
     expect(html).toContain('class="sprite claude-mage"');
     expect(html).toContain('data-state="idle" data-frame="0"');
     expect(html).toContain("Claude");
@@ -43,6 +48,12 @@ describe("cardHtml", () => {
 
   it("omits the superseded activity indicator", () => {
     expect(cardHtml(weeklyOnly, "claude")).not.toContain("activity-signal");
+  });
+
+  it("returns no provider or aura markup when explicitly unauthenticated", () => {
+    const snapshot = { ...weeklyOnly, authenticated: false };
+    expect(cardHtml(snapshot, "codex")).toBe("");
+    expect(cardHtml({ ...snapshot, provider: "claude" }, "claude")).toBe("");
   });
 
   it("escapes limit labels", () => {

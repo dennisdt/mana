@@ -30,6 +30,10 @@ function spriteHtml(provider: string): string {
   return `<div class="sprite ${className}" data-provider="${provider}" data-state="idle" data-frame="0" aria-hidden="true"></div>`;
 }
 
+function auraHtml(provider: string): string {
+  return `<div class="aura" data-provider="${provider}" data-frame="0" aria-hidden="true"></div>`;
+}
+
 function barHtml(snapshot: Snapshot, bar: Bar, index: number): string {
   const left = manaLeft(bar.used_percent);
   const pixels = meterFillPixels(left);
@@ -37,6 +41,7 @@ function barHtml(snapshot: Snapshot, bar: Bar, index: number): string {
 }
 
 export function cardHtml(snapshot: Snapshot | undefined, provider: string): string {
+  if (!providerIsVisible(snapshot)) return "";
   const name = provider === "claude" ? "Claude" : "Codex";
   const hasData = snapshot && snapshot.status !== "absent" && snapshot.bars.length > 0;
   const rows = hasData
@@ -46,7 +51,7 @@ export function cardHtml(snapshot: Snapshot | undefined, provider: string): stri
         <span class="val"><b class="pct" data-bar="${index}"></b><span class="cd" data-bar="${index}"></span></span>
       </div>`).join("")}</div>`
     : `<div class="empty">no data - log in via the ${provider} CLI</div>`;
-  return `<div class="familiar-slot">${spriteHtml(provider)}</div>
+  return `<div class="familiar-slot">${auraHtml(provider)}${spriteHtml(provider)}</div>
     <div class="provider-content">
       <div class="head"><strong>${name}</strong><span class="plan"></span><span class="age"></span></div>
       ${rows}

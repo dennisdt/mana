@@ -22,6 +22,8 @@ import {
   spriteFrameDelayAt,
   spritePhaseCycles,
 } from "./sprite-animation";
+import { resolveAura } from "./aura-assets";
+import { auraFrameAt, auraFrameDelayAt } from "./aura-animation";
 import { cardHtml, providerIsVisible, type Snapshot } from "./view";
 import {
   createFrameDecorationUpdater,
@@ -43,6 +45,8 @@ let hovering = false;
 let moving = false;
 const spriteMotionPreference = window.matchMedia("(prefers-reduced-motion: reduce)");
 let spriteFrameTimer: ReturnType<typeof setTimeout> | undefined;
+const auraMotionPreference = spriteMotionPreference;
+let auraFrameTimer: ReturnType<typeof setTimeout> | undefined;
 const perimeter = document.getElementById("perimeter")!;
 perimeter.innerHTML = frameLayerHtml();
 const updateFrameDecoration = createFrameDecorationUpdater(perimeter);
@@ -104,6 +108,86 @@ function listenForSpriteMotionPreference(): void {
   }
 }
 
+function auraDescriptorFor(element: HTMLElement) {
+  const provider = element.dataset.provider;
+  if (provider !== "claude" && provider !== "codex") return null;
+  return resolveAura(
+    provider,
+    progress?.tier ?? "naked",
+    progress?.prestige ?? 0,
+  );
+}
+
+function applyAuras(): void {
+  document.querySelectorAll<HTMLElement>(".aura").forEach((element) => {
+    const descriptor = auraDescriptorFor(element);
+    element.hidden = descriptor === null;
+    element.dataset.frame = "0";
+    if (!descriptor) {
+      delete element.dataset.band;
+      delete element.dataset.frameCount;
+      element.style.removeProperty("--aura-atlas");
+      element.style.removeProperty("--aura-frame-count");
+      return;
+    }
+    element.dataset.band = descriptor.band;
+    element.dataset.frameCount = String(descriptor.frameCount);
+    element.style.setProperty("--aura-atlas", `url("${descriptor.atlasUrl}")`);
+    element.style.setProperty(
+      "--aura-frame-count",
+      String(descriptor.frameCount),
+    );
+  });
+}
+
+function updateAuraFrames(now: number = performance.now()): void {
+  document.querySelectorAll<HTMLElement>(".aura:not([hidden])").forEach((element) => {
+    const descriptor = auraDescriptorFor(element);
+    if (!descriptor) return;
+    const frame = String(
+      auraFrameAt(now, descriptor, auraMotionPreference.matches),
+    );
+    if (element.dataset.frame !== frame) element.dataset.frame = frame;
+  });
+}
+
+function scheduleAuraFrameUpdate(now: number = performance.now()): void {
+  clearTimeout(auraFrameTimer);
+  if (auraMotionPreference.matches) return;
+  const delays = Array.from(
+    document.querySelectorAll<HTMLElement>(".aura:not([hidden])"),
+    (element) => {
+      const descriptor = auraDescriptorFor(element);
+      return descriptor
+        ? auraFrameDelayAt(now, descriptor, auraMotionPreference.matches)
+        : undefined;
+    },
+  ).filter((delay): delay is number => delay !== undefined);
+  const delay = Math.min(...delays);
+  if (!Number.isFinite(delay)) return;
+  auraFrameTimer = setTimeout(runAuraFrameUpdate, delay);
+}
+
+function runAuraFrameUpdate(): void {
+  const now = performance.now();
+  updateAuraFrames(now);
+  scheduleAuraFrameUpdate(now);
+}
+
+function syncAuraFrames(now: number = performance.now()): void {
+  updateAuraFrames(now);
+  scheduleAuraFrameUpdate(now);
+}
+
+function listenForAuraMotionPreference(): void {
+  const update = () => syncAuraFrames();
+  if (typeof auraMotionPreference.addEventListener === "function") {
+    auraMotionPreference.addEventListener("change", update);
+  } else {
+    auraMotionPreference.addListener(update);
+  }
+}
+
 function updateSprites(): void {
   for (const provider of ["claude", "codex"]) {
     document
@@ -148,7 +232,9 @@ function renderProvider(provider: string): void {
   const card = document.getElementById(`card-${provider}`)!;
   card.hidden = !providerIsVisible(s);
   const key =
-    s && s.status !== "absent" && s.bars.length > 0
+    !providerIsVisible(s)
+      ? "unauthenticated"
+      : s && s.status !== "absent" && s.bars.length > 0
       ? s.bars.map((b) => `${b.id}:${b.label}`).join(",")
       : "absent";
   if (card.dataset.key !== key) {
@@ -156,6 +242,8 @@ function renderProvider(provider: string): void {
     card.innerHTML = cardHtml(s, provider);
     // Rebuilt sprites fall back to the CSS default sheet; re-dress them.
     applySheets();
+    applyAuras();
+    syncAuraFrames();
   }
   const stale = s?.status === "stale";
   card.classList.toggle("stale", stale === true);
@@ -217,6 +305,8 @@ function renderProgress(p: Progress): void {
     `${xpBarFraction(p) * 100}%`;
   updateRankSheets(p.tier);
   void updateFrameDecoration(p.tier, p.prestige);
+  applyAuras();
+  syncAuraFrames();
   resizeRosterContent();
 }
 
@@ -354,4 +444,6 @@ for (const provider of ["claude", "codex"]) renderProvider(provider);
 
 listenForSpriteMotionPreference();
 syncSpriteFrames();
+listenForAuraMotionPreference();
+syncAuraFrames();
 setInterval(tick, 1000);

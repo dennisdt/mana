@@ -21,9 +21,12 @@ describe("fantasy gaming HUD stylesheet", () => {
     expect(styles).toContain('url("/sprites/codex-ice-lightning.png")');
     expect(styles).not.toContain("clawd.png");
     expect(styles).not.toContain("nimbus.png");
-    expect(styles).toContain(".familiar-slot::before");
+    expect(styles).toContain(".aura");
+    expect(styles).not.toContain(".familiar-slot::before");
     expect(styles).not.toContain(".familiar-slot::after");
-    expect(styles).toMatch(/#card section\s*\{[^}]*grid-template-columns:\s*70px minmax\(0, 1fr\)/s);
+    expect(styles).toMatch(
+      /#card section\s*\{[^}]*grid-template-columns:\s*70px minmax\(0, 1fr\)[^}]*gap:\s*24px/s,
+    );
     const spriteRule = styles.match(/\.sprite\s*\{([^}]*)\}/s)?.[1] ?? "";
     const spriteArtRule = styles.match(/\.sprite::before\s*\{([^}]*)\}/s)?.[1] ?? "";
     expect(spriteRule).toMatch(/width:\s*56px/);
@@ -64,7 +67,9 @@ describe("fantasy gaming HUD stylesheet", () => {
     expect(artRule).toMatch(
       /top:\s*calc\(50% \+ var\(--sprite-y-offset,\s*0px\)\)/,
     );
-    expect(artRule).toMatch(/left:\s*50%/);
+    expect(artRule).toMatch(
+      /left:\s*calc\(50% \+ var\(--sprite-x-offset,\s*0px\)\)/,
+    );
     expect(artRule).toMatch(/transform:\s*translate\(-50%,\s*-50%\)/);
     expect(artRule).toMatch(/background-image:\s*var\(--sprite-sheet\)/);
     expect(artRule).toMatch(/background-size:\s*272px 204px/);
@@ -83,16 +88,19 @@ describe("fantasy gaming HUD stylesheet", () => {
     expect(mainSource).not.toContain("element.style.backgroundImage");
   });
 
-  it("optically lowers Codex without moving Claude or the provider layout", () => {
+  it("optically grounds both provider sprites without moving the provider layout", () => {
     expect(styles).toMatch(
       /\.sprite::before\s*\{[^}]*top:\s*calc\(50% \+ var\(--sprite-y-offset,\s*0px\)\)/s,
     );
     expect(styles).toMatch(
-      /\.sprite\.codex-mage\s*\{[^}]*--sprite-y-offset:\s*4px/s,
+      /\.sprite::before\s*\{[^}]*left:\s*calc\(50% \+ var\(--sprite-x-offset,\s*0px\)\)/s,
     );
-    const claudeRule =
-      styles.match(/\.sprite\.claude-mage\s*\{([^}]*)\}/s)?.[1] ?? "";
-    expect(claudeRule).not.toContain("--sprite-y-offset");
+    expect(styles).toMatch(
+      /\.sprite\.claude-mage\s*\{[^}]*--sprite-x-offset:\s*-4px[^}]*--sprite-y-offset:\s*10px/s,
+    );
+    expect(styles).toMatch(
+      /\.sprite\.codex-mage\s*\{[^}]*--sprite-x-offset:\s*-3px[^}]*--sprite-y-offset:\s*8px/s,
+    );
     expect(styles).toMatch(
       /\.familiar-slot\s*\{[^}]*align-items:\s*center[^}]*justify-content:\s*center/s,
     );
@@ -334,21 +342,35 @@ describe("rank armor art integration", () => {
     expect(styles).not.toContain("--armor-");
   });
 
-  it("moves working feedback from diamonds to a radial glow behind the familiar", () => {
+  it("renders fixed authored aura cells behind grounded sprites without a generic glow", () => {
     expect(styles).not.toContain("activity-signal");
-    expect(styles).toMatch(
-      /\.familiar-slot::before\s*\{[^}]*z-index:\s*1[^}]*top:\s*50%[^}]*left:\s*50%[^}]*width:\s*72px[^}]*height:\s*72px[^}]*radial-gradient\(\s*circle[^}]*var\(--glow\)[^}]*pointer-events:\s*none/s,
+    expect(styles).not.toContain(".familiar-slot::before");
+    expect(styles).not.toMatch(/\.familiar-slot[^}]*radial-gradient/s);
+    const aura = styles.match(/\.aura\s*\{([^}]*)\}/s)?.[1] ?? "";
+    expect(aura).toMatch(/position:\s*absolute/);
+    expect(aura).toMatch(/z-index:\s*1/);
+    expect(aura).toMatch(/top:\s*50%/);
+    expect(aura).toMatch(/left:\s*50%/);
+    expect(aura).toMatch(/width:\s*96px/);
+    expect(aura).toMatch(/height:\s*96px/);
+    expect(aura).toMatch(/background-image:\s*var\(--aura-atlas,\s*none\)/);
+    expect(aura).toMatch(
+      /background-size:\s*calc\(var\(--aura-frame-count,\s*1\) \* 96px\) 96px/,
     );
-    const glow = styles.match(/\.familiar-slot::before\s*\{([^}]*)\}/s)?.[1] ?? "";
-    expect(glow).not.toMatch(/\bfilter\s*:/);
-    expect(glow).toMatch(/transform:\s*translate\(-50%, -50%\)/);
-    expect(glow).not.toMatch(/\bscale\(/);
-    const workingGlow =
-      styles.match(
-        /\.provider-card\[data-working\] \.familiar-slot::before\s*\{([^}]*)\}/s,
-      )?.[1] ?? "";
-    expect(workingGlow).toMatch(/opacity:\s*0\.66/);
-    expect(workingGlow).not.toMatch(/\btransform\s*:/);
+    expect(aura).toMatch(/image-rendering:\s*pixelated/);
+    expect(aura).toMatch(/pointer-events:\s*none/);
+    expect(aura).toMatch(/transform:\s*translate\(-50%,\s*-50%\)/);
+    expect(aura).toMatch(/zoom:\s*var\(--sprite-resolution-scale,\s*1\)/);
+    expect(styles).toMatch(/\.sprite\s*\{[^}]*z-index:\s*2/s);
+    for (let frame = 0; frame < 8; frame += 1) {
+      const xPosition = frame === 0 ? "0" : `-${frame * 96}px`;
+      expect(styles).toMatch(
+        new RegExp(
+          `\\.aura\\[data-frame="${frame}"\\]\\s*\\{[^}]*background-position-x:\\s*${xPosition}`,
+          "s",
+        ),
+      );
+    }
     expect(styles).not.toMatch(/\.provider-card\[data-working\] \.sprite\s*\{/);
     expect(styles).not.toMatch(/\.sprite\.(?:claude|codex)-mage\s*\{[^}]*drop-shadow\(0 0/s);
   });
@@ -368,6 +390,9 @@ describe("rank armor art integration", () => {
     );
     const reducedMotion = styles.slice(
       styles.indexOf("@media (prefers-reduced-motion: reduce)"),
+    );
+    expect(reducedMotion).toMatch(
+      /\.aura\[data-frame\]\s*\{[^}]*background-position-x:\s*0/s,
     );
     expect(reducedMotion).toMatch(
       /#progress \.xpfill::before,\s*#progress \.xpfill::after[^{]*\{[^}]*animation:\s*none/s,
