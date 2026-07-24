@@ -879,6 +879,15 @@ body {
   image-rendering: pixelated;
 }
 
+/* Prestige art is a complete frame layer; transparent pixels must not reveal rank art. */
+#perimeter[data-prestige]:not([data-prestige="0"]) .frame-rail {
+  background-image: var(--frame-prestige-piece, none);
+}
+
+#perimeter[data-prestige]:not([data-prestige="0"]) .frame-corner {
+  background-image: var(--frame-prestige-corner-piece, none);
+}
+
 .frame-corner--tl {
   top: 0;
   left: 0;
