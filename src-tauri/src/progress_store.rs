@@ -592,6 +592,25 @@ fn read_candidate(
     })
 }
 
+fn reject_unsupported_candidate_schemas(paths: &ProgressPaths) -> std::io::Result<()> {
+    for path in [&paths.primary, &paths.backup] {
+        let bytes = match read_candidate(path, false) {
+            Ok(Some(bytes)) => bytes,
+            Ok(None) => continue,
+            Err(error) => return Err(error.into_inner()),
+        };
+        if decode_state(&bytes)
+            .is_err_and(|error| error.kind() == std::io::ErrorKind::Unsupported)
+        {
+            return Err(unsupported_schema(format!(
+                "unsupported progress schema version in authoritative candidate: {}",
+                path.display()
+            )));
+        }
+    }
+    Ok(())
+}
+
 fn primary_contains_valid_state(path: &std::path::Path) -> std::io::Result<bool> {
     match std::fs::symlink_metadata(path) {
         Ok(metadata) if !metadata.file_type().is_file() => Ok(false),
@@ -712,6 +731,7 @@ fn save_state_with_hook_locked(
     state: &ProgressState,
     mut hook: impl FnMut(SaveCheckpoint) -> std::io::Result<()>,
 ) -> std::io::Result<()> {
+    reject_unsupported_candidate_schemas(paths)?;
     let bytes = encode_state(state)?;
     let primary_is_valid = primary_contains_valid_state(&paths.primary)?;
     let mut temporary = open_save_temporary(paths, primary_is_valid)?;
@@ -828,6 +848,7 @@ fn require_any_migration_snapshot(paths: &ProgressPaths) -> std::io::Result<()> 
 fn require_matching_migration_snapshot(
     paths: &ProgressPaths,
 ) -> std::io::Result<MigrationPublicationStatus> {
+    reject_unsupported_candidate_schemas(paths)?;
     let candidates = [(&paths.primary, true), (&paths.backup, false)];
     let mut recovery_error = None;
 
@@ -857,9 +878,7 @@ fn require_matching_migration_snapshot(
                     "cannot publish a migration rebuild over current progress",
                 ));
             }
-            Err(error) if is_primary && error.kind() == std::io::ErrorKind::Unsupported => {
-                return Err(error);
-            }
+            Err(error) if error.kind() == std::io::ErrorKind::Unsupported => return Err(error),
             Err(error) => {
                 if recovery_error.is_none() {
                     recovery_error = Some(error);
@@ -1104,6 +1123,7 @@ fn recover_temporary(paths: &ProgressPaths) -> std::io::Result<Option<LoadOutcom
 }
 
 fn load_state_locked(paths: &ProgressPaths) -> std::io::Result<LoadOutcome> {
+    reject_unsupported_candidate_schemas(paths)?;
     let candidates = [
         (&paths.primary, RecoverySource::Primary, None),
         (&paths.backup, RecoverySource::Backup, None),
@@ -1189,9 +1209,7 @@ fn load_state_locked(paths: &ProgressPaths) -> std::io::Result<LoadOutcome> {
                 });
             }
             Err(error) => {
-                if source == RecoverySource::Primary
-                    && error.kind() == std::io::ErrorKind::Unsupported
-                {
+                if error.kind() == std::io::ErrorKind::Unsupported {
                     return Err(error);
                 }
                 if recovery_error.is_none() {

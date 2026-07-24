@@ -96,24 +96,73 @@ fn jsonl_files(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
     files
 }
 
+fn checked_jsonl_files(
+    dir: &std::path::Path,
+) -> std::io::Result<Vec<std::path::PathBuf>> {
+    let mut files = Vec::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(directory) = stack.pop() {
+        let entries = match std::fs::read_dir(&directory) {
+            Ok(entries) => entries,
+            Err(error)
+                if directory == dir && error.kind() == std::io::ErrorKind::NotFound =>
+            {
+                continue;
+            }
+            Err(error) => return Err(error),
+        };
+        for entry in entries {
+            let path = entry?.path();
+            let metadata = std::fs::metadata(&path)?;
+            if metadata.is_dir() {
+                stack.push(path);
+            } else if path.extension().is_some_and(|ext| ext == "jsonl") {
+                files.push(path);
+            }
+        }
+    }
+    Ok(files)
+}
+
+struct CompleteLines {
+    text: String,
+    new_offset: u64,
+    restarted: bool,
+}
+
 /// Complete lines appended to `path` since `offset`, plus the new offset.
 /// Live sessions write mid-line, so bytes after the last newline stay
 /// un-consumed for the next scan. An offset past EOF means the file was
 /// truncated or rotated; start over from zero rather than skip it forever.
-fn complete_lines_from(path: &std::path::Path, offset: u64) -> Option<(String, u64)> {
+fn checked_complete_lines_from(
+    path: &std::path::Path,
+    offset: u64,
+) -> std::io::Result<Option<CompleteLines>> {
     use std::io::{Read as _, Seek as _};
-    let len = std::fs::metadata(path).ok()?.len();
-    let start = if offset > len { 0 } else { offset };
-    let mut file = std::fs::File::open(path).ok()?;
-    file.seek(std::io::SeekFrom::Start(start)).ok()?;
+    let len = std::fs::metadata(path)?.len();
+    let restarted = offset > len;
+    let start = if restarted { 0 } else { offset };
+    let mut file = std::fs::File::open(path)?;
+    file.seek(std::io::SeekFrom::Start(start))?;
     let mut buf = Vec::with_capacity((len - start) as usize);
-    file.read_to_end(&mut buf).ok()?;
-    let consumed = buf.iter().rposition(|&b| b == b'\n')? + 1;
+    file.read_to_end(&mut buf)?;
+    let Some(consumed) = buf.iter().rposition(|&b| b == b'\n').map(|index| index + 1) else {
+        return Ok(restarted.then_some(CompleteLines {
+            text: String::new(),
+            new_offset: 0,
+            restarted,
+        }));
+    };
     buf.truncate(consumed);
-    Some((
-        String::from_utf8_lossy(&buf).into_owned(),
-        start + consumed as u64,
-    ))
+    Ok(Some(CompleteLines {
+        text: String::from_utf8_lossy(&buf).into_owned(),
+        new_offset: start + consumed as u64,
+        restarted,
+    }))
+}
+
+fn complete_lines_from(path: &std::path::Path, offset: u64) -> Option<CompleteLines> {
+    checked_complete_lines_from(path, offset).ok().flatten()
 }
 
 /// Output tokens for one Claude transcript line. Malformed lines yield 0 but
@@ -131,17 +180,40 @@ fn claude_line_output_tokens(line: &str) -> u64 {
         .unwrap_or(0)
 }
 
-pub fn scan_claude_dir(dir: &std::path::Path, state: &mut TallyState) {
-    for path in jsonl_files(dir) {
+fn scan_claude_files(
+    files: Vec<std::path::PathBuf>,
+    state: &mut TallyState,
+    checked: bool,
+) -> std::io::Result<()> {
+    for path in files {
         let key = path.to_string_lossy().into_owned();
         let offset = state.claude_offsets.get(&key).copied().unwrap_or(0);
-        let Some((text, new_offset)) = complete_lines_from(&path, offset) else {
+        let lines = if checked {
+            checked_complete_lines_from(&path, offset)?
+        } else {
+            complete_lines_from(&path, offset)
+        };
+        let Some(lines) = lines else {
             continue;
         };
-        let added: u64 = text.lines().map(claude_line_output_tokens).sum();
+        let added = lines.text.lines().fold(0u64, |total, line| {
+            total.saturating_add(claude_line_output_tokens(line))
+        });
         state.output_tokens = state.output_tokens.saturating_add(added);
-        state.claude_offsets.insert(key, new_offset);
+        state.claude_offsets.insert(key, lines.new_offset);
     }
+    Ok(())
+}
+
+pub fn scan_claude_dir(dir: &std::path::Path, state: &mut TallyState) {
+    let _ = scan_claude_files(jsonl_files(dir), state, false);
+}
+
+fn checked_scan_claude_dir(
+    dir: &std::path::Path,
+    state: &mut TallyState,
+) -> std::io::Result<()> {
+    scan_claude_files(checked_jsonl_files(dir)?, state, true)
 }
 
 /// Cumulative output total from one Codex `token_count` event line. Some
@@ -164,27 +236,72 @@ fn codex_line_output_total(line: &str) -> Option<u64> {
     Some(output.saturating_add(reasoning))
 }
 
-pub fn scan_codex_dir(dir: &std::path::Path, state: &mut TallyState) {
-    for path in jsonl_files(dir) {
+fn scan_codex_files(
+    files: Vec<std::path::PathBuf>,
+    state: &mut TallyState,
+    checked: bool,
+) -> std::io::Result<()> {
+    for path in files {
         let key = path.to_string_lossy().into_owned();
+        let had_offset = state.codex_offsets.contains_key(&key);
         let offset = state.codex_offsets.get(&key).copied().unwrap_or(0);
-        let Some((text, new_offset)) = complete_lines_from(&path, offset) else {
+        let baseline_pending =
+            had_offset && offset == 0 && !state.codex_output_totals.contains_key(&key);
+        let lines = if checked {
+            checked_complete_lines_from(&path, offset)?
+        } else {
+            complete_lines_from(&path, offset)
+        };
+        let Some(lines) = lines else {
             continue;
         };
-        state.codex_offsets.insert(key.clone(), new_offset);
+        state.codex_offsets.insert(key.clone(), lines.new_offset);
         // Only the latest total matters: it is a per-file running total, so
         // summing events would multiply-count every earlier token.
-        let Some(latest) = text.lines().rev().find_map(codex_line_output_total) else {
+        let Some(latest) = lines
+            .text
+            .lines()
+            .rev()
+            .find_map(codex_line_output_total)
+        else {
+            if lines.restarted || baseline_pending {
+                // Offset zero plus no cumulative total records that the
+                // replacement file still needs its first complete baseline.
+                state.codex_offsets.insert(key.clone(), 0);
+                state.codex_output_totals.remove(&key);
+            }
             continue;
         };
-        let stored = state.codex_output_totals.get(&key).copied().unwrap_or(0);
-        if latest > stored {
-            state.output_tokens = state.output_tokens.saturating_add(latest - stored);
+        let stored = state.codex_output_totals.get(&key).copied();
+        if !lines.restarted {
+            match stored {
+                Some(stored) if latest > stored => {
+                    state.output_tokens = state.output_tokens.saturating_add(latest - stored);
+                }
+                None if baseline_pending => {}
+                None => {
+                    state.output_tokens = state.output_tokens.saturating_add(latest);
+                }
+                _ => {}
+            }
         }
         // A latest below the stored total means truncation/rotation: resync
-        // the baseline without counting anything.
+        // the baseline without counting anything. An offset reset is also an
+        // explicit replacement signal, even when the new cumulative is higher.
         state.codex_output_totals.insert(key, latest);
     }
+    Ok(())
+}
+
+pub fn scan_codex_dir(dir: &std::path::Path, state: &mut TallyState) {
+    let _ = scan_codex_files(jsonl_files(dir), state, false);
+}
+
+fn checked_scan_codex_dir(
+    dir: &std::path::Path,
+    state: &mut TallyState,
+) -> std::io::Result<()> {
+    scan_codex_files(checked_jsonl_files(dir)?, state, true)
 }
 
 /// The whole persisted progression: cosmetic choices (rank/prestige), the
@@ -381,6 +498,27 @@ fn scan_progress_dirs(
     }
 }
 
+fn rebuild_from_output_history(
+    claude_dir: &std::path::Path,
+    codex_dir: &std::path::Path,
+) -> Result<ProgressState, String> {
+    let mut candidate = ProgressState::default();
+    checked_scan_claude_dir(claude_dir, &mut candidate.tally).map_err(|error| {
+        format!(
+            "Claude output history rebuild failed at {}: {error}",
+            claude_dir.display()
+        )
+    })?;
+    checked_scan_codex_dir(codex_dir, &mut candidate.tally).map_err(|error| {
+        format!(
+            "Codex output history rebuild failed at {}: {error}",
+            codex_dir.display()
+        )
+    })?;
+    recalculate_from_output_history(&mut candidate);
+    Ok(candidate)
+}
+
 fn scan_and_commit_progress(
     current: &mut ProgressState,
     rebuild_pending: bool,
@@ -390,10 +528,7 @@ fn scan_and_commit_progress(
     persist_rebuild: impl FnOnce(&ProgressState) -> Result<(), String>,
 ) -> Result<(Option<Progress>, bool), String> {
     if rebuild_pending {
-        let mut candidate = ProgressState::default();
-        scan_claude_dir(claude_dir, &mut candidate.tally);
-        scan_codex_dir(codex_dir, &mut candidate.tally);
-        recalculate_from_output_history(&mut candidate);
+        let candidate = rebuild_from_output_history(claude_dir, codex_dir)?;
         let view = commit_candidate(current, candidate, persist_rebuild)?;
         return Ok((Some(view), true));
     }
@@ -423,10 +558,7 @@ fn scan_and_commit_progress_with_authoritative_rebuild(
         );
     }
 
-    let mut candidate = ProgressState::default();
-    scan_claude_dir(claude_dir, &mut candidate.tally);
-    scan_codex_dir(codex_dir, &mut candidate.tally);
-    recalculate_from_output_history(&mut candidate);
+    let candidate = rebuild_from_output_history(claude_dir, codex_dir)?;
     let authoritative = persist_rebuild(&candidate)?;
     let view = progress_view(&authoritative);
     *current = authoritative;
