@@ -1,7 +1,7 @@
 export const ROSTER_WIDTH = 456;
 export const INITIAL_ROSTER_HEIGHT = 175;
-export const FRAME_BLEED = 24;
-export const WINDOW_WIDTH = ROSTER_WIDTH + FRAME_BLEED * 2;
+export const FRAME_BLEED = 0;
+export const WINDOW_WIDTH = ROSTER_WIDTH;
 
 /// The HUD renders at its compact authored scale. The window itself is
 /// deliberately not user-resizable.

@@ -60,11 +60,12 @@ body {
 #glass {
   position: absolute;
   z-index: 1;
-  inset: 24px;
+  inset: 0;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
-  width: 456px;
+  width: 100%;
+  height: 100%;
   overflow: visible;
   border: 1px solid rgba(205, 221, 242, 0.34);
   border-radius: var(--hud-radius);
@@ -826,56 +827,56 @@ body {
 
 .frame-rail--top,
 .frame-rail--bottom {
-  right: 40px;
-  left: 40px;
+  right: 16px;
+  left: 16px;
   height: 16px;
   background-repeat: repeat-x;
   background-size: 64px 16px;
 }
 
 .frame-rail--top {
-  top: 16px;
+  top: 8px;
   --frame-rank-piece: var(--frame-rank-rail-top);
   --frame-prestige-piece: var(--frame-prestige-rail-top);
 }
 
 .frame-rail--bottom {
-  bottom: 16px;
+  bottom: 8px;
   --frame-rank-piece: var(--frame-rank-rail-bottom);
   --frame-prestige-piece: var(--frame-prestige-rail-bottom);
 }
 
 .frame-rail--right,
 .frame-rail--left {
-  top: 40px;
-  bottom: 40px;
+  top: 16px;
+  bottom: 16px;
   width: 16px;
   background-repeat: repeat-y;
   background-size: 16px 64px;
 }
 
 .frame-rail--right {
-  right: 16px;
+  right: 8px;
   --frame-rank-piece: var(--frame-rank-rail-right);
   --frame-prestige-piece: var(--frame-prestige-rail-right);
 }
 
 .frame-rail--left {
-  left: 16px;
+  left: 8px;
   --frame-rank-piece: var(--frame-rank-rail-left);
   --frame-prestige-piece: var(--frame-prestige-rail-left);
 }
 
 .frame-corner {
   z-index: 1;
-  width: 48px;
-  height: 48px;
+  width: 32px;
+  height: 32px;
+  overflow: hidden;
   background-image:
     var(--frame-prestige-corner-piece, none),
     var(--frame-rank-corner-piece, none);
   background-repeat: no-repeat;
-  background-position: center;
-  background-size: 48px 48px, 48px 48px;
+  background-size: 48px 48px;
   image-rendering: pixelated;
 }
 
@@ -891,6 +892,7 @@ body {
 .frame-corner--tl {
   top: 0;
   left: 0;
+  background-position: top left;
   --frame-rank-corner-piece: var(--frame-rank-corner-tl);
   --frame-prestige-corner-piece: var(--frame-prestige-corner-tl);
 }
@@ -898,6 +900,7 @@ body {
 .frame-corner--tr {
   top: 0;
   right: 0;
+  background-position: top right;
   --frame-rank-corner-piece: var(--frame-rank-corner-tr);
   --frame-prestige-corner-piece: var(--frame-prestige-corner-tr);
 }
@@ -905,6 +908,7 @@ body {
 .frame-corner--bl {
   bottom: 0;
   left: 0;
+  background-position: bottom left;
   --frame-rank-corner-piece: var(--frame-rank-corner-bl);
   --frame-prestige-corner-piece: var(--frame-prestige-corner-bl);
 }
@@ -912,6 +916,7 @@ body {
 .frame-corner--br {
   right: 0;
   bottom: 0;
+  background-position: bottom right;
   --frame-rank-corner-piece: var(--frame-rank-corner-br);
   --frame-prestige-corner-piece: var(--frame-prestige-corner-br);
 }
@@ -922,8 +927,8 @@ body {
 
 .frame-ornaments--top,
 .frame-ornaments--bottom {
-  right: 48px;
-  left: 48px;
+  right: 32px;
+  left: 32px;
   display: grid;
   height: 16px;
   grid-auto-flow: column;
@@ -931,19 +936,19 @@ body {
 }
 
 .frame-ornaments--top {
-  top: 16px;
+  top: 8px;
   --frame-ornament-piece: var(--frame-ornament-top);
 }
 
 .frame-ornaments--bottom {
-  bottom: 16px;
+  bottom: 8px;
   --frame-ornament-piece: var(--frame-ornament-bottom);
 }
 
 .frame-ornaments--right,
 .frame-ornaments--left {
-  top: 48px;
-  bottom: 48px;
+  top: 32px;
+  bottom: 32px;
   display: grid;
   width: 16px;
   grid-auto-flow: row;
@@ -951,12 +956,12 @@ body {
 }
 
 .frame-ornaments--right {
-  right: 16px;
+  right: 8px;
   --frame-ornament-piece: var(--frame-ornament-right);
 }
 
 .frame-ornaments--left {
-  left: 16px;
+  left: 8px;
   --frame-ornament-piece: var(--frame-ornament-left);
 }
 
@@ -979,19 +984,7 @@ body {
 }
 
 .frame-crest {
-  top: 0;
-  left: 50%;
-  z-index: 2;
-  display: grid;
-  width: 96px;
-  height: 48px;
-  place-items: center;
-  background-image: var(--frame-crest, none);
-  background-repeat: no-repeat;
-  background-position: center;
-  background-size: 96px 48px;
-  image-rendering: pixelated;
-  transform: translateX(-50%);
+  display: none;
 }
 
 .frame-rail::after,
@@ -1047,12 +1040,30 @@ body {
   background: rgba(255, 252, 226, 0.78);
   -webkit-mask-image: var(--frame-prestige-corner-piece, none);
   -webkit-mask-repeat: no-repeat;
-  -webkit-mask-position: center;
   -webkit-mask-size: 48px 48px;
   mask-image: var(--frame-prestige-corner-piece, none);
   mask-repeat: no-repeat;
-  mask-position: center;
   mask-size: 48px 48px;
+}
+
+.frame-corner--tl::after {
+  -webkit-mask-position: top left;
+  mask-position: top left;
+}
+
+.frame-corner--tr::after {
+  -webkit-mask-position: top right;
+  mask-position: top right;
+}
+
+.frame-corner--bl::after {
+  -webkit-mask-position: bottom left;
+  mask-position: bottom left;
+}
+
+.frame-corner--br::after {
+  -webkit-mask-position: bottom right;
+  mask-position: bottom right;
 }
 
 #perimeter[data-prestige="7"] .frame-rail::after,
