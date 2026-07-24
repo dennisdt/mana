@@ -67,7 +67,8 @@ export function frameRenderPlan(
 ): FrameRenderPlan {
   const cssVariables: Record<string, string> = {};
   const ornamentCounts = {} as Record<FrameSide, number>;
-  const cornerEmblem = model.prestige?.crestTop ?? model.rank?.crestTop;
+  const cornerEmblem = model.prestige ? undefined : model.rank?.crestTop;
+  const cornerSurface = model.prestige?.cornerSurface;
 
   for (const side of SIDES) {
     cssVariables[`--frame-rank-rail-${side}`] = cssUrl(
@@ -94,13 +95,14 @@ export function frameRenderPlan(
 
   cssVariables["--frame-crest"] = cssUrl(model.rank?.crestTop);
   cssVariables["--frame-corner-emblem"] = cssUrl(cornerEmblem);
+  cssVariables["--frame-corner-surface"] = cssUrl(cornerSurface);
   cssVariables["--progress-prestige-crest"] = cssUrl(
     model.prestige?.crestTop,
   );
 
   return {
     cssVariables,
-    hasCornerEmblem: Boolean(cornerEmblem),
+    hasCornerEmblem: Boolean(cornerEmblem || cornerSurface),
     ornamentCounts,
     prestigeText: model.prestigeText,
   };
