@@ -19,6 +19,7 @@ const ORNAMENT_COUNTS: Record<FrameSide, number> = {
 type FrameRenderPlan = {
   cssVariables: Record<string, string>;
   hasCornerEmblem: boolean;
+  hasCornerSurface: boolean;
   ornamentCounts: Record<FrameSide, number>;
   /** @deprecated Compatibility metadata; it is never rendered. */
   prestigeText: string;
@@ -68,7 +69,10 @@ export function frameRenderPlan(
   const cssVariables: Record<string, string> = {};
   const ornamentCounts = {} as Record<FrameSide, number>;
   const cornerEmblem = model.prestige ? undefined : model.rank?.crestTop;
-  const cornerSurface = model.prestige?.cornerSurface;
+  const cornerSurfaces = model.prestige?.cornerSurfaces;
+  const hasCornerSurface = CORNERS.every((corner) =>
+    Boolean(cornerSurfaces?.[corner]),
+  );
 
   for (const side of SIDES) {
     cssVariables[`--frame-rank-rail-${side}`] = cssUrl(
@@ -91,18 +95,21 @@ export function frameRenderPlan(
     cssVariables[`--frame-prestige-corner-${corner}`] = cssUrl(
       model.prestige?.corners[corner],
     );
+    cssVariables[`--frame-corner-surface-${corner}`] = cssUrl(
+      cornerSurfaces?.[corner],
+    );
   }
 
   cssVariables["--frame-crest"] = cssUrl(model.rank?.crestTop);
   cssVariables["--frame-corner-emblem"] = cssUrl(cornerEmblem);
-  cssVariables["--frame-corner-surface"] = cssUrl(cornerSurface);
   cssVariables["--progress-prestige-crest"] = cssUrl(
     model.prestige?.crestTop,
   );
 
   return {
     cssVariables,
-    hasCornerEmblem: Boolean(cornerEmblem || cornerSurface),
+    hasCornerEmblem: Boolean(cornerEmblem || hasCornerSurface),
+    hasCornerSurface,
     ornamentCounts,
     prestigeText: model.prestigeText,
   };
@@ -121,6 +128,7 @@ export function applyFrameDecoration(
   perimeter.dataset.rank = model.resolvedTier;
   perimeter.dataset.prestige = prestigeLevel(model);
   perimeter.dataset.cornerEmblem = String(plan.hasCornerEmblem);
+  perimeter.dataset.cornerSurface = String(plan.hasCornerSurface);
   if (perimeter.parentElement) {
     perimeter.parentElement.style.setProperty(
       "--progress-prestige-crest",

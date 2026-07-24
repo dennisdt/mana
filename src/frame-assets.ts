@@ -27,7 +27,7 @@ export type FramePieceSet = {
   corners: Record<FrameCorner, string>;
   ornaments: Partial<Record<FrameSide, string>>;
   crestTop?: string;
-  cornerSurface?: string;
+  cornerSurfaces?: Record<FrameCorner, string>;
 };
 
 export type ResolvedFrameDecoration = {
@@ -64,7 +64,17 @@ const RANK_EXTRAS: Partial<
   godlike: ["crest-top", "ornament-h", "ornament-v"],
 };
 
-const PRESTIGE_PIECES = [...BASE_PIECES, "crest-top", "corner-joint"] as const;
+const PRESTIGE_CORNER_PIECES = [
+  "corner-joint-tl",
+  "corner-joint-tr",
+  "corner-joint-bl",
+  "corner-joint-br",
+] as const;
+const PRESTIGE_PIECES = [
+  ...BASE_PIECES,
+  "crest-top",
+  ...PRESTIGE_CORNER_PIECES,
+] as const;
 const ROMAN_PRESTIGE = [
   "",
   "I",
@@ -151,7 +161,12 @@ function prestigePieceSet(level: number): {
       },
       ornaments: {},
       crestTop: `${root}/crest-top.png`,
-      cornerSurface: `${root}/corner-joint.png`,
+      cornerSurfaces: {
+        tl: `${root}/corner-joint-tl.png`,
+        tr: `${root}/corner-joint-tr.png`,
+        bl: `${root}/corner-joint-bl.png`,
+        br: `${root}/corner-joint-br.png`,
+      },
     },
     required: PRESTIGE_PIECES.map((piece) => `${root}/${piece}.png`),
   };

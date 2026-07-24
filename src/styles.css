@@ -978,6 +978,22 @@ body {
   image-rendering: pixelated;
 }
 
+/* Directional RGBA joints define one connected reliquary silhouette. Their
+   alpha clips the solid face, 16px rail collars, and animated ornament while
+   the outer-only border radius preserves the native 8px window corner. */
+#perimeter[data-corner-surface="true"] .frame-corner {
+  --cap-surface: none;
+  background-color: transparent;
+  -webkit-mask-image: var(--frame-corner-surface);
+  mask-image: var(--frame-corner-surface);
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
+}
+
 #perimeter[data-prestige="1"] {
   --cap-edge: #f4f8ff;
   --cap-inner: rgba(152, 174, 203, 0.82);
@@ -1159,6 +1175,7 @@ body {
 }
 
 .frame-corner--tl {
+  --frame-corner-surface: var(--frame-corner-surface-tl);
   --cap-prestige-h: var(--frame-prestige-rail-top);
   --cap-prestige-v: var(--frame-prestige-rail-left);
   --cap-rank-h: var(--frame-rank-rail-top);
@@ -1173,6 +1190,7 @@ body {
 }
 
 .frame-corner--tr {
+  --frame-corner-surface: var(--frame-corner-surface-tr);
   --cap-prestige-h: var(--frame-prestige-rail-top);
   --cap-prestige-v: var(--frame-prestige-rail-right);
   --cap-rank-h: var(--frame-rank-rail-top);
@@ -1187,6 +1205,7 @@ body {
 }
 
 .frame-corner--bl {
+  --frame-corner-surface: var(--frame-corner-surface-bl);
   --cap-prestige-h: var(--frame-prestige-rail-bottom);
   --cap-prestige-v: var(--frame-prestige-rail-left);
   --cap-rank-h: var(--frame-rank-rail-bottom);
@@ -1201,6 +1220,7 @@ body {
 }
 
 .frame-corner--br {
+  --frame-corner-surface: var(--frame-corner-surface-br);
   --cap-prestige-h: var(--frame-prestige-rail-bottom);
   --cap-prestige-v: var(--frame-prestige-rail-right);
   --cap-rank-h: var(--frame-rank-rail-bottom);
