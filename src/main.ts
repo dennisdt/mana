@@ -331,7 +331,7 @@ function resizeRosterContent(): void {
     // the window height. #root itself always fills the viewport, so its
     // scrollHeight would just echo the current window size back.
     const content = document.getElementById("content")!;
-    const size = scaledRosterSize(content.scrollHeight, WIDGET_ZOOM);
+    const size = scaledRosterSize(content.offsetHeight, WIDGET_ZOOM);
     const win = getCurrentWindow();
     const position = await win.outerPosition();
     const monitor = await currentMonitor();

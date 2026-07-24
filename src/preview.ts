@@ -203,7 +203,7 @@ function visibleProviders(options: PreviewOptions): Provider[] {
 function sizePreview(root: HTMLElement): void {
   const content = document.getElementById("content");
   if (!content) return;
-  const height = rosterHeight(content.scrollHeight) + FRAME_BLEED * 2;
+  const height = rosterHeight(content.offsetHeight) + FRAME_BLEED * 2;
   root.style.height = `${height}px`;
   document.documentElement.style.height = `${height}px`;
   document.body.style.height = `${height}px`;

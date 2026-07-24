@@ -380,7 +380,7 @@ body {
 .aura {
   position: absolute;
   z-index: 1;
-  top: 50%;
+  top: calc(50% - 8px);
   left: 50%;
   width: 96px;
   height: 96px;
