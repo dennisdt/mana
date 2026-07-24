@@ -355,12 +355,10 @@ function resizeRosterContent(): void {
 
 document.body.addEventListener("mouseenter", () => {
   hovering = true;
-  document.getElementById("root")!.dataset.hovering = "true";
   updateSprites();
 });
 document.body.addEventListener("mouseleave", () => {
   hovering = false;
-  document.getElementById("root")!.dataset.hovering = "false";
   updateSprites();
 });
 
@@ -377,11 +375,13 @@ void getCurrentWindow().onMoved(() => {
 
 const actionButton = document.getElementById("action")!;
 const ceremony = document.getElementById("ceremony")!;
+const xpBar = document.querySelector<HTMLElement>("#progress .xpbar")!;
 
 // #root is one deep Tauri drag region; interactive controls must swallow
 // mousedown or every click starts a window drag. The ceremony backdrop
 // deliberately stays draggable.
 actionButton.addEventListener("mousedown", (event) => event.stopPropagation());
+xpBar.addEventListener("mousedown", (event) => event.stopPropagation());
 ceremony
   .querySelector<HTMLElement>(".ceremony-panel")!
   .addEventListener("mousedown", (event) => event.stopPropagation());

@@ -237,11 +237,14 @@ function populateProgressFooter(progress: Progress): void {
     copy.append(level);
   }
 
-  let lifetime = copy.querySelector<HTMLElement>(".lifetime-output");
+  const xpbar = footer.querySelector<HTMLElement>(".xpbar");
+  let lifetime = xpbar?.querySelector<HTMLElement>(".lifetime-output");
   if (!lifetime) {
     lifetime = document.createElement("span");
+    lifetime.id = "lifetime-output-tooltip";
     lifetime.className = "lifetime-output";
-    copy.append(lifetime);
+    lifetime.setAttribute("role", "tooltip");
+    xpbar?.append(lifetime);
   }
 
   level.textContent = levelLabel(progress);
@@ -305,7 +308,6 @@ export async function mountPreview(options: PreviewOptions): Promise<void> {
 
   root.dataset.rank = options.rank;
   root.dataset.previewReduced = String(options.reducedMotion);
-  root.dataset.hovering = String(options.hovering);
   perimeter.innerHTML = frameLayerHtml();
 
   const activeProviders = visibleProviders(options);
@@ -337,6 +339,8 @@ export async function mountPreview(options: PreviewOptions): Promise<void> {
   );
   const xp = document.querySelector<HTMLElement>("#progress .xpfill");
   if (xp) xp.style.width = "84%";
+  const xpbar = document.querySelector<HTMLElement>("#progress .xpbar");
+  if (xpbar) xpbar.dataset.tooltipOpen = String(options.hovering);
 
   const updateFrame = createFrameDecorationUpdater(perimeter);
   await updateFrame(options.rank, options.prestige);

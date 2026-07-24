@@ -19,9 +19,19 @@
             <span class="prestige-crest" aria-hidden="true"></span>
             <span class="progress-copy">
               <span class="level"></span>
-              <span class="lifetime-output"></span>
             </span>
-            <div class="xpbar"><div class="xpfill"></div></div>
+            <div
+              class="xpbar"
+              tabindex="0"
+              aria-describedby="lifetime-output-tooltip"
+            >
+              <div class="xpfill"></div>
+              <span
+                id="lifetime-output-tooltip"
+                class="lifetime-output"
+                role="tooltip"
+              ></span>
+            </div>
           </div>
         </div>
         <button id="action" hidden></button>
