@@ -18,6 +18,7 @@ const ORNAMENT_COUNTS: Record<FrameSide, number> = {
 
 type FrameRenderPlan = {
   cssVariables: Record<string, string>;
+  hasCornerEmblem: boolean;
   ornamentCounts: Record<FrameSide, number>;
   /** @deprecated Compatibility metadata; it is never rendered. */
   prestigeText: string;
@@ -66,6 +67,7 @@ export function frameRenderPlan(
 ): FrameRenderPlan {
   const cssVariables: Record<string, string> = {};
   const ornamentCounts = {} as Record<FrameSide, number>;
+  const cornerEmblem = model.prestige?.crestTop ?? model.rank?.crestTop;
 
   for (const side of SIDES) {
     cssVariables[`--frame-rank-rail-${side}`] = cssUrl(
@@ -91,12 +93,14 @@ export function frameRenderPlan(
   }
 
   cssVariables["--frame-crest"] = cssUrl(model.rank?.crestTop);
+  cssVariables["--frame-corner-emblem"] = cssUrl(cornerEmblem);
   cssVariables["--progress-prestige-crest"] = cssUrl(
     model.prestige?.crestTop,
   );
 
   return {
     cssVariables,
+    hasCornerEmblem: Boolean(cornerEmblem),
     ornamentCounts,
     prestigeText: model.prestigeText,
   };
@@ -114,6 +118,7 @@ export function applyFrameDecoration(
 
   perimeter.dataset.rank = model.resolvedTier;
   perimeter.dataset.prestige = prestigeLevel(model);
+  perimeter.dataset.cornerEmblem = String(plan.hasCornerEmblem);
   if (perimeter.parentElement) {
     perimeter.parentElement.style.setProperty(
       "--progress-prestige-crest",
