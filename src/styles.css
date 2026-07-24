@@ -880,13 +880,15 @@ body {
 }
 
 .frame-rail--top {
-  top: -4px;
+  top: 0;
+  background-position: center -4px;
   --frame-rank-piece: var(--frame-rank-rail-top);
   --frame-prestige-piece: var(--frame-prestige-rail-top);
 }
 
 .frame-rail--bottom {
-  bottom: -4px;
+  bottom: 0;
+  background-position: center 4px;
   --frame-rank-piece: var(--frame-rank-rail-bottom);
   --frame-prestige-piece: var(--frame-prestige-rail-bottom);
 }
@@ -901,13 +903,15 @@ body {
 }
 
 .frame-rail--right {
-  right: -4px;
+  right: 0;
+  background-position: 4px center;
   --frame-rank-piece: var(--frame-rank-rail-right);
   --frame-prestige-piece: var(--frame-prestige-rail-right);
 }
 
 .frame-rail--left {
-  left: -4px;
+  left: 0;
+  background-position: -4px center;
   --frame-rank-piece: var(--frame-rank-rail-left);
   --frame-prestige-piece: var(--frame-prestige-rail-left);
 }
@@ -932,6 +936,7 @@ body {
 
 #perimeter[data-prestige]:not([data-prestige="0"]) .frame-corner {
   background-image: var(--frame-prestige-corner-piece, none);
+  background-size: 40px 40px;
 }
 
 #perimeter[data-prestige]:not([data-prestige="0"]) .frame-corner--tl {
@@ -1081,6 +1086,16 @@ body {
   mask-size: 64px 16px;
 }
 
+.frame-rail--top::after {
+  -webkit-mask-position: center -4px;
+  mask-position: center -4px;
+}
+
+.frame-rail--bottom::after {
+  -webkit-mask-position: center 4px;
+  mask-position: center 4px;
+}
+
 .frame-rail--right::after,
 .frame-rail--left::after {
   background: linear-gradient(
@@ -1095,6 +1110,16 @@ body {
   -webkit-mask-size: 16px 64px;
   mask-repeat: repeat-y;
   mask-size: 16px 64px;
+}
+
+.frame-rail--right::after {
+  -webkit-mask-position: 4px center;
+  mask-position: 4px center;
+}
+
+.frame-rail--left::after {
+  -webkit-mask-position: -4px center;
+  mask-position: -4px center;
 }
 
 .frame-corner::after {
@@ -1129,25 +1154,33 @@ body {
 
 #perimeter[data-prestige]:not([data-prestige="0"])
   .frame-corner--tl::after {
+  -webkit-mask-size: 40px 40px;
   -webkit-mask-position: bottom right;
+  mask-size: 40px 40px;
   mask-position: bottom right;
 }
 
 #perimeter[data-prestige]:not([data-prestige="0"])
   .frame-corner--tr::after {
+  -webkit-mask-size: 40px 40px;
   -webkit-mask-position: bottom left;
+  mask-size: 40px 40px;
   mask-position: bottom left;
 }
 
 #perimeter[data-prestige]:not([data-prestige="0"])
   .frame-corner--bl::after {
+  -webkit-mask-size: 40px 40px;
   -webkit-mask-position: top right;
+  mask-size: 40px 40px;
   mask-position: top right;
 }
 
 #perimeter[data-prestige]:not([data-prestige="0"])
   .frame-corner--br::after {
+  -webkit-mask-size: 40px 40px;
   -webkit-mask-position: top left;
+  mask-size: 40px 40px;
   mask-position: top left;
 }
 

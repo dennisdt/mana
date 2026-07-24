@@ -74,8 +74,9 @@ export function frameRenderPlan(
     cssVariables[`--frame-prestige-rail-${side}`] = cssUrl(
       model.prestige?.rails[side],
     );
-    const ornament =
-      model.prestige?.ornaments[side] ?? model.rank?.ornaments[side];
+    const ornament = model.prestige
+      ? model.prestige.ornaments[side]
+      : model.rank?.ornaments[side];
     cssVariables[`--frame-ornament-${side}`] = cssUrl(ornament);
     ornamentCounts[side] = ornament ? ORNAMENT_COUNTS[side] : 0;
   }
