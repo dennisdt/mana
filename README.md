@@ -48,12 +48,25 @@ Mana polls each authenticated provider once per minute:
 
 If a provider request temporarily fails, Mana keeps the last successful values visible as stale data. If credentials are missing or malformed, that provider section is hidden.
 
+## How Progression Works
+
+Progression counts generated output rather than total provider usage:
+
+- **Claude Code:** output tokens only.
+- **Codex:** output tokens plus reasoning output tokens.
+- Input and cached tokens are excluded.
+
+Each prestige tier requires cumulatively more output than the previous tier. Surplus output carries forward when a level, rank, or prestige threshold is crossed. Hover over the progression footer to see the exact retained lifetime output total.
+
+When upgrading from v2 to v3, Mana rebuilds progression from retained local logs and preserves an immutable v2 recovery file.
+
 ## Privacy And Security
 
 - Credential access is read-only.
 - Progress is stored locally using migration-safe, atomic saves and remains in place across normal app updates.
 - Mana re-reads credentials for each poll and never writes or refreshes them.
-- Token values are never logged, persisted, or included in widget content.
+- Raw provider usage and token content is not sent elsewhere. Mana persists only local progression state, the retained lifetime output tally, and log cursors.
+- Mana does not log raw provider responses or credentials.
 - Provider credentials are sent only to that provider's usage endpoint over HTTPS.
 - Attack activity is detected locally from Claude and Codex session-log writes once per second; Mana never uploads session content or activity telemetry.
 - Mana does not include analytics or an external backend.
@@ -88,10 +101,10 @@ The frontend uses TypeScript and CSS inside a Tauri 2 shell. Native polling, cre
 To inspect the visual progression without launching Tauri or reading local credentials, run `npm run dev` and open:
 
 ```text
-http://127.0.0.1:1420/preview.html?rank=godlike&prestige=10&providers=both
+http://127.0.0.1:1420/preview.html?rank=godlike&prestige=10&providers=both&outputTokens=18446744073709551615
 ```
 
-The preview accepts every rank name, `prestige=0` through `10`, `providers=claude|codex|both`, and `motion=reduced` for deterministic screenshots. It uses fixed usage data and never reads or changes saved progress.
+The preview accepts every rank name, `prestige=0` through `10`, `providers=claude|codex|both`, `motion=reduced`, an unsigned 64-bit `outputTokens` value, and `hover=true`. It uses fixed provider usage data and never reads or changes saved progress.
 
 ## Known Limitations
 
