@@ -274,6 +274,50 @@ describe("generated application perimeter", () => {
     expect(corner).toMatch(/z-index:\s*3/);
   });
 
+  it("renders authored directional corners without opaque square cap faces", () => {
+    const corner = styles.match(/\.frame-corner\s*\{([^}]*)\}/s)?.[1] ?? "";
+    expect(corner).toMatch(/width:\s*32px/);
+    expect(corner).toMatch(/height:\s*32px/);
+    expect(corner).toMatch(/background-color:\s*transparent/);
+    expect(corner).toMatch(
+      /background-image:\s*var\(--frame-rank-corner-piece,\s*none\)/,
+    );
+    expect(corner).toMatch(/background-size:\s*48px 48px/);
+    expect(corner).toMatch(
+      /filter:\s*drop-shadow\(0 0 4px var\(--cap-glow\)\)/,
+    );
+    expect(corner).not.toMatch(/box-shadow/);
+    expect(styles).not.toContain("--frame-corner-emblem");
+    expect(styles).not.toContain("data-corner-emblem");
+  });
+
+  it("maps each corner to matching rank art and prestige joint art", () => {
+    const directions = {
+      tl: { position: "left top", surface: "tl" },
+      tr: { position: "right top", surface: "tr" },
+      bl: { position: "left bottom", surface: "bl" },
+      br: { position: "right bottom", surface: "br" },
+    } as const;
+
+    for (const [corner, { position, surface }] of Object.entries(directions)) {
+      const rule =
+        styles.match(
+          new RegExp(`\\.frame-corner--${corner}\\s*\\{([^}]*)\\}`, "s"),
+        )?.[1] ?? "";
+      expect(rule, corner).toContain(
+        `--frame-rank-corner-piece: var(--frame-rank-corner-${corner})`,
+      );
+      expect(rule, corner).toContain(
+        `--frame-prestige-corner-piece: var(--frame-corner-surface-${surface})`,
+      );
+      expect(rule, corner).toContain(`background-position: ${position}`);
+    }
+
+    expect(styles).toMatch(
+      /#perimeter\[data-corner-surface="true"\] \.frame-corner\s*\{[^}]*background-image:\s*var\(--frame-prestige-corner-piece,\s*none\)/s,
+    );
+  });
+
   it("evenly spaces one ornament lane per side", () => {
     expect(styles).toMatch(
       /\.frame-ornaments--top,[^}]*\.frame-ornaments--bottom\s*\{[^}]*display:\s*grid[^}]*grid-auto-flow:\s*column[^}]*justify-content:\s*space-evenly/s,

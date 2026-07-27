@@ -132,6 +132,25 @@ describe("generated frame perimeter", () => {
     });
   });
 
+  it("keeps all four directional rank corners without repeating the rank crest", () => {
+    const plan = frameRenderPlan(
+      decoration({
+        prestige: null,
+        prestigeText: "",
+      }),
+    );
+
+    expect(plan.cssVariables).toMatchObject({
+      "--frame-rank-corner-tl": 'url("/rank/corner-tl.png")',
+      "--frame-rank-corner-tr": 'url("/rank/corner-tr.png")',
+      "--frame-rank-corner-bl": 'url("/rank/corner-bl.png")',
+      "--frame-rank-corner-br": 'url("/rank/corner-br.png")',
+      "--frame-crest": 'url("/rank/crest-top.png")',
+    });
+    expect(plan.cssVariables).not.toHaveProperty("--frame-corner-emblem");
+    expect(plan).not.toHaveProperty("hasCornerEmblem");
+  });
+
   it("lets prestige ornaments replace rank ornaments in the same four lanes", () => {
     const model = decoration();
     model.prestige!.ornaments = {
@@ -169,6 +188,7 @@ describe("generated frame perimeter", () => {
       prestige: "10",
       cornerSurface: "true",
     });
+    expect(perimeter.dataset).not.toHaveProperty("cornerEmblem");
     expect(perimeter.parentElement?.dataset.frameArt).toBe("true");
     expect(perimeter.parentElement?.dataset.prestigeCrest).toBe("true");
     expect(perimeter.children.get('[data-frame-ornaments="top"]')?.innerHTML)
