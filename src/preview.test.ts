@@ -103,6 +103,12 @@ describe("browser-only visual preview", () => {
     expect(source).not.toContain("get_snapshots");
   });
 
+  it("uses the same frame-safe width as the native roster", () => {
+    expect(previewMarkup).toMatch(
+      /html,\s*body\s*\{[^}]*width:\s*488px[^}]*min-width:\s*488px/s,
+    );
+  });
+
   it("disables fill transitions before reduced-motion preview readiness", () => {
     expect(previewMarkup).toMatch(
       /#root\[data-preview-reduced="true"\] \.fill,\s*#root\[data-preview-reduced="true"\] #progress \.xpfill\s*\{[^}]*transition:\s*none\s*!important;/s,
