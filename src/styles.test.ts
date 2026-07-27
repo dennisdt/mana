@@ -172,6 +172,19 @@ describe("fantasy gaming HUD stylesheet", () => {
     );
     expect(styles).not.toMatch(/#card section \+ section\s*\{/);
   });
+
+  it("keeps provider content and the footer inside the generated frame safe area", () => {
+    expect(styles).toMatch(
+      /#card\s*\{[^}]*padding:\s*24px 32px 20px/s,
+    );
+    expect(styles).toMatch(
+      /#root\[data-frame-art="true"\] #progress\s*\{[^}]*padding:\s*10px 36px 18px/s,
+    );
+    expect(styles).toMatch(
+      /#card section\s*\{[^}]*grid-template-columns:\s*70px minmax\(0, 1fr\)/s,
+    );
+    expect(styles).toContain("--meter-width: 144px");
+  });
 });
 
 describe("concentric nested corner radii", () => {

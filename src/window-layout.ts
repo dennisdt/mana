@@ -1,4 +1,4 @@
-export const ROSTER_WIDTH = 456;
+export const ROSTER_WIDTH = 488;
 export const INITIAL_ROSTER_HEIGHT = 175;
 export const FRAME_BLEED = 0;
 export const WINDOW_WIDTH = ROSTER_WIDTH;
