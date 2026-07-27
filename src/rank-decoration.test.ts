@@ -192,6 +192,10 @@ describe("rank decoration bitmaps", () => {
       "corner-bl": [96, 96],
       "corner-br": [96, 96],
       "crest-top": [192, 96],
+      "corner-joint-tl": [96, 96],
+      "corner-joint-tr": [96, 96],
+      "corner-joint-bl": [96, 96],
+      "corner-joint-br": [96, 96],
     };
 
     for (let prestige = 1; prestige <= 10; prestige += 1) {
@@ -206,6 +210,8 @@ describe("rank decoration bitmaps", () => {
         expect([image.width, image.height], label).toEqual(dimensions);
         if (piece === "rail-h" || piece === "rail-v") {
           assertRailEdges(image, piece, label);
+        } else if (piece.startsWith("corner-")) {
+          expect(edgeAlpha(image), label).toBeGreaterThan(0);
         } else {
           expect(edgeAlpha(image), label).toBe(0);
         }

@@ -62,7 +62,7 @@ describe("ceremony copy", () => {
     const copy = dialogCopy("prestige", { ...base, rank: 13, tier: "godlike", prestige: 1 });
     expect(copy.title).toBe("PRESTIGE II");
     expect(copy.body).toBe(
-      "The curve steepens. Begin again at Level 1 — Prestige 2 badge is yours forever.",
+      "The curve steepens. Surplus output carries forward into Prestige 2.",
     );
     expect(copy.confirm).toBe("Prestige");
   });

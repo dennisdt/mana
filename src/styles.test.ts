@@ -184,9 +184,9 @@ describe("concentric nested corner radii", () => {
     expect(librs).toMatch(/apply_vibrancy\([^;]*Some\(HUD_CORNER_RADIUS\),\s*\)\?;/s);
   });
 
-  it("keeps one continuous fallback outline on the inset glass", () => {
+  it("keeps one continuous fallback outline on the flush glass", () => {
     expect(styles).toMatch(
-      /#glass\s*\{[^}]*inset:\s*24px[^}]*border:\s*1px solid[^}]*border-radius:\s*var\(--hud-radius\)/s,
+      /#glass\s*\{[^}]*inset:\s*0[^}]*border:\s*1px solid[^}]*border-radius:\s*var\(--hud-radius\)/s,
     );
     expect(styles).not.toMatch(/border-style:\s*(?:dotted|dashed)/);
     expect(styles).not.toContain("--corner-tick");
@@ -204,15 +204,16 @@ describe("concentric nested corner radii", () => {
 });
 
 describe("generated application perimeter", () => {
-  it("uses a transparent shell and one inset glass surface", () => {
+  it("uses a transparent shell and one flush glass surface", () => {
     const root = styles.match(/#root\s*\{([^}]*)\}/s)?.[1] ?? "";
     const glass = styles.match(/#glass\s*\{([^}]*)\}/s)?.[1] ?? "";
     expect(root).toMatch(/background:\s*transparent/);
     expect(root).not.toMatch(/\bborder\s*:/);
     expect(root).not.toMatch(/\bbox-shadow\s*:/);
     expect(glass).toMatch(/position:\s*absolute/);
-    expect(glass).toMatch(/inset:\s*24px/);
-    expect(glass).toMatch(/width:\s*456px/);
+    expect(glass).toMatch(/inset:\s*0/);
+    expect(glass).toMatch(/width:\s*100%/);
+    expect(glass).toMatch(/height:\s*100%/);
     expect(styles).not.toMatch(/#root::(?:before|after)/);
   });
 
@@ -222,10 +223,10 @@ describe("generated application perimeter", () => {
       /#perimeter\s*\{[^}]*position:\s*absolute[^}]*inset:\s*0[^}]*pointer-events:\s*none/s,
     );
     expect(styles).toMatch(
-      /\.frame-corner\s*\{[^}]*width:\s*48px[^}]*height:\s*48px[^}]*background-size:\s*48px 48px[^}]*image-rendering:\s*pixelated/s,
+      /\.frame-corner\s*\{[^}]*width:\s*32px[^}]*height:\s*32px[^}]*image-rendering:\s*pixelated/s,
     );
     expect(styles).toMatch(
-      /\.frame-crest\s*\{[^}]*width:\s*96px[^}]*height:\s*48px[^}]*background-size:\s*96px 48px/s,
+      /\.frame-crest\s*\{[^}]*display:\s*none/s,
     );
     const horizontal =
       styles.match(
@@ -239,7 +240,7 @@ describe("generated application perimeter", () => {
     expect(horizontal).toMatch(/background-repeat:\s*repeat-x/);
     expect(vertical).toMatch(/background-size:\s*16px 64px/);
     expect(vertical).toMatch(/background-repeat:\s*repeat-y/);
-    expect(perimeterStyles).not.toMatch(/background-size:\s*100%\s+100%/);
+    expect(perimeterStyles).toContain("background-size: 64px 16px");
   });
 
   it("underlaps rails beneath transparent corner padding", () => {
@@ -253,11 +254,11 @@ describe("generated application perimeter", () => {
       )?.[1] ?? "";
     const corner = styles.match(/\.frame-corner\s*\{([^}]*)\}/s)?.[1] ?? "";
 
-    expect(horizontal).toMatch(/right:\s*44px/);
-    expect(horizontal).toMatch(/left:\s*44px/);
-    expect(vertical).toMatch(/top:\s*44px/);
-    expect(vertical).toMatch(/bottom:\s*44px/);
-    expect(corner).toMatch(/z-index:\s*1/);
+    expect(horizontal).toMatch(/right:\s*16px/);
+    expect(horizontal).toMatch(/left:\s*16px/);
+    expect(vertical).toMatch(/top:\s*16px/);
+    expect(vertical).toMatch(/bottom:\s*16px/);
+    expect(corner).toMatch(/z-index:\s*3/);
   });
 
   it("evenly spaces one ornament lane per side", () => {
@@ -266,25 +267,6 @@ describe("generated application perimeter", () => {
     );
     expect(styles).toMatch(
       /\.frame-ornaments--right,[^}]*\.frame-ornaments--left\s*\{[^}]*display:\s*grid[^}]*grid-auto-flow:\s*row[^}]*align-content:\s*space-evenly/s,
-    );
-  });
-
-  it("anchors prestige identity in a readable pixel plaque and hides an empty label", () => {
-    const label =
-      styles.match(/\.frame-prestige-text\s*\{([^}]*)\}/s)?.[1] ?? "";
-    expect(label).toMatch(/position:\s*absolute/);
-    expect(label).toMatch(/top:\s*26px/);
-    expect(label).toMatch(/left:\s*50%/);
-    expect(label).toMatch(/min-width:\s*22px/);
-    expect(label).toMatch(/height:\s*14px/);
-    expect(label).toMatch(/background:\s*#160d2a/);
-    expect(label).toMatch(/border:\s*1px solid #f2cb68/);
-    expect(label).toMatch(/font-size:\s*9px/);
-    expect(label).toMatch(
-      /text-shadow:\s*1px 0 #08030d,\s*-1px 0 #08030d,\s*0 1px #08030d,\s*0 -1px #08030d/s,
-    );
-    expect(styles).toMatch(
-      /\.frame-prestige-text:empty\s*\{[^}]*display:\s*none/s,
     );
   });
 
@@ -367,7 +349,7 @@ describe("rank armor art integration", () => {
     const aura = styles.match(/\.aura\s*\{([^}]*)\}/s)?.[1] ?? "";
     expect(aura).toMatch(/position:\s*absolute/);
     expect(aura).toMatch(/z-index:\s*1/);
-    expect(aura).toMatch(/top:\s*50%/);
+    expect(aura).toMatch(/top:\s*calc\(50% - 12px\)/);
     expect(aura).toMatch(/left:\s*50%/);
     expect(aura).toMatch(/width:\s*96px/);
     expect(aura).toMatch(/height:\s*96px/);

@@ -51,6 +51,12 @@ function decoration(
       },
       ornaments: {},
       crestTop: "/prestige/crest-top.png",
+      cornerSurfaces: {
+        tl: "/prestige/corner-joint-tl.png",
+        tr: "/prestige/corner-joint-tr.png",
+        bl: "/prestige/corner-joint-bl.png",
+        br: "/prestige/corner-joint-br.png",
+      },
     },
     prestigeText: "X",
     diagnostics: [],
@@ -89,7 +95,6 @@ function fakePerimeter(): FakeElement {
       new FakeElement(),
     );
   }
-  perimeter.children.set("[data-prestige-text]", new FakeElement());
   return perimeter;
 }
 
@@ -101,7 +106,7 @@ describe("generated frame perimeter", () => {
     expect((html.match(/data-frame-corner=/g) ?? [])).toHaveLength(4);
     expect((html.match(/data-frame-ornaments=/g) ?? [])).toHaveLength(4);
     expect((html.match(/data-frame-crest/g) ?? [])).toHaveLength(1);
-    expect((html.match(/data-prestige-text/g) ?? [])).toHaveLength(1);
+    expect(html).not.toContain("data-prestige-text");
     expect(html).not.toContain("badge");
   });
 
@@ -109,10 +114,10 @@ describe("generated frame perimeter", () => {
     const plan = frameRenderPlan(decoration());
 
     expect(plan.ornamentCounts).toEqual({
-      top: 2,
-      right: 1,
-      bottom: 2,
-      left: 1,
+      top: 0,
+      right: 0,
+      bottom: 0,
+      left: 0,
     });
     expect(plan.prestigeText).toBe("X");
     expect(plan.cssVariables).toMatchObject({
@@ -120,8 +125,10 @@ describe("generated frame perimeter", () => {
       "--frame-prestige-rail-top": 'url("/prestige/rail-h.png")',
       "--frame-rank-corner-tl": 'url("/rank/corner-tl.png")',
       "--frame-prestige-corner-tl": 'url("/prestige/corner-tl.png")',
-      "--frame-crest": 'url("/prestige/crest-top.png")',
-      "--frame-ornament-top": 'url("/rank/ornament-h.png")',
+      "--frame-corner-surface-tl": 'url("/prestige/corner-joint-tl.png")',
+      "--frame-crest": 'url("/rank/crest-top.png")',
+      "--progress-prestige-crest": 'url("/prestige/crest-top.png")',
+      "--frame-ornament-top": "none",
     });
   });
 
@@ -160,17 +167,14 @@ describe("generated frame perimeter", () => {
     expect(perimeter.dataset).toMatchObject({
       rank: "godlike",
       prestige: "10",
+      cornerSurface: "true",
     });
     expect(perimeter.parentElement?.dataset.frameArt).toBe("true");
+    expect(perimeter.parentElement?.dataset.prestigeCrest).toBe("true");
     expect(perimeter.children.get('[data-frame-ornaments="top"]')?.innerHTML)
-      .toBe(
-        '<span class="frame-ornament" aria-hidden="true"></span>'.repeat(2),
-      );
+      .toBe("");
     expect(perimeter.children.get('[data-frame-ornaments="right"]')?.innerHTML)
-      .toBe('<span class="frame-ornament" aria-hidden="true"></span>');
-    expect(perimeter.children.get("[data-prestige-text]")?.textContent).toBe(
-      "X",
-    );
+      .toBe("");
   });
 
   it("keeps only the newest asynchronous rank and prestige update", async () => {

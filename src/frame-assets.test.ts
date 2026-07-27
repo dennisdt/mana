@@ -69,7 +69,7 @@ describe("frame asset registry", () => {
 
     expect(model.prestige?.crestTop).toBe("/frames/prestige/10/crest-top.png");
     expect(model.prestigeText).toBe("P12");
-    expect(model.rank?.crestTop).toBeUndefined();
+    expect(model.rank?.crestTop).toBe("/frames/ranks/godlike/crest-top.png");
     expect(
       probe.mock.calls
         .map(([url]) => url)
@@ -82,6 +82,10 @@ describe("frame asset registry", () => {
       "/frames/prestige/10/corner-bl.png",
       "/frames/prestige/10/corner-br.png",
       "/frames/prestige/10/crest-top.png",
+      "/frames/prestige/10/corner-joint-tl.png",
+      "/frames/prestige/10/corner-joint-tr.png",
+      "/frames/prestige/10/corner-joint-bl.png",
+      "/frames/prestige/10/corner-joint-br.png",
     ]);
   });
 
@@ -119,7 +123,7 @@ describe("frame asset registry", () => {
 
     expect(model.prestige?.key).toBe("prestige-1");
     expect(model.prestige?.crestTop).toBe("/frames/prestige/1/crest-top.png");
-    expect(model.rank?.crestTop).toBeUndefined();
+    expect(model.rank?.crestTop).toBe("/frames/ranks/godlike/crest-top.png");
     expect(model.prestigeText).toBe("III");
     expect(model.diagnostics.filter((message) => message.includes("Prestige"))).toHaveLength(2);
   });

@@ -12,14 +12,18 @@ type DecodedPng = {
 
 const PIECE_SPECS = {
   "corner-tl": [96, 96],
+  "corner-joint-tl": [96, 96],
   "rail-h": [128, 32],
   "corner-tr": [96, 96],
+  "corner-joint-tr": [96, 96],
   "rail-v": [32, 128],
   "crest-top": [192, 96],
   "ornament-h": [64, 32],
   "corner-bl": [96, 96],
+  "corner-joint-bl": [96, 96],
   "ornament-v": [32, 64],
   "corner-br": [96, 96],
+  "corner-joint-br": [96, 96],
 } as const;
 
 const BASE_PIECES = [
@@ -296,7 +300,11 @@ function assertCornerBalance(directory: URL): void {
   }
 }
 
-function assertKit(directory: URL, expectedPieces: readonly PieceName[]): void {
+function assertKit(
+  directory: URL,
+  expectedPieces: readonly PieceName[],
+  connectedCorners = false,
+): void {
   const filenames = readdirSync(directory).sort();
   expect(filenames).toEqual(expectedPieces.map((name) => `${name}.png`).sort());
 
@@ -317,6 +325,8 @@ function assertKit(directory: URL, expectedPieces: readonly PieceName[]): void {
         bounds.height,
         `${directory.pathname}${piece}.png repeat span`,
       ).toBeGreaterThanOrEqual(image.height * 0.65);
+    } else if (connectedCorners && piece.startsWith("corner-")) {
+      expect(edgeAlpha(image), piece).toBeGreaterThan(0);
     } else {
       expect(edgeAlpha(image), piece).toBe(0);
     }
@@ -338,12 +348,20 @@ describe("generated frame assets", () => {
     }
   });
 
-  it("locks every prestige overlay to its seven-piece contract", () => {
-    const prestigePieces = [...BASE_PIECES, "crest-top"] as const;
+  it("locks every prestige overlay to its eleven-piece contract", () => {
+    const prestigePieces = [
+      ...BASE_PIECES,
+      "crest-top",
+      "corner-joint-tl",
+      "corner-joint-tr",
+      "corner-joint-bl",
+      "corner-joint-br",
+    ] as const;
     for (let prestige = 1; prestige <= 10; prestige += 1) {
       assertKit(
         new URL(`../public/frames/prestige/${prestige}/`, import.meta.url),
         prestigePieces,
+        true,
       );
     }
   });

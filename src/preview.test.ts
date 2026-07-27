@@ -15,6 +15,8 @@ describe("browser-only visual preview", () => {
       prestige: 10,
       providers: "both",
       reducedMotion: false,
+      outputTokens: "12345678",
+      hovering: false,
     });
   });
 
@@ -30,6 +32,8 @@ describe("browser-only visual preview", () => {
       prestige: 0,
       providers: "claude",
       reducedMotion: true,
+      outputTokens: "12345678",
+      hovering: false,
     });
     expect(
       parsePreviewOptions(
@@ -54,6 +58,8 @@ describe("browser-only visual preview", () => {
       prestige: 10,
       providers: "both",
       reducedMotion: false,
+      outputTokens: "12345678",
+      hovering: false,
     });
     expect(
       parsePreviewOptions(new URLSearchParams("prestige=-1.5")),
