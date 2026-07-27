@@ -291,6 +291,12 @@ describe("generated application perimeter", () => {
     expect(styles).not.toContain("data-corner-emblem");
   });
 
+  it("keeps Platinum rank corners as bright as its silver rails", () => {
+    expect(styles).toMatch(
+      /#root\[data-rank="platinum"\] #perimeter\[data-corner-surface="false"\] \.frame-corner\s*\{[^}]*filter:\s*brightness\(1\.35\)\s*contrast\(0\.72\)\s*drop-shadow\(0 0 4px var\(--cap-glow\)\)/s,
+    );
+  });
+
   it("maps each corner to matching rank art and prestige joint art", () => {
     const directions = {
       tl: { position: "left top", surface: "tl" },

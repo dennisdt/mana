@@ -956,6 +956,13 @@ body {
   background-image: var(--frame-prestige-corner-piece, none);
 }
 
+#root[data-rank="platinum"] #perimeter[data-corner-surface="false"] .frame-corner {
+  filter:
+    brightness(1.35)
+    contrast(0.72)
+    drop-shadow(0 0 4px var(--cap-glow));
+}
+
 #perimeter[data-prestige="1"] {
   --cap-edge: #f4f8ff;
   --cap-inner: rgba(152, 174, 203, 0.82);
