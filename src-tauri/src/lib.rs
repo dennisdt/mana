@@ -195,8 +195,10 @@ mod tests {
     fn tray_toggles_on_left_click_and_widget_starts_hidden() {
         let source = include_str!("lib.rs");
         assert!(source.contains("TrayIconBuilder::with_id(\"main\")"));
-        assert!(source.contains(".show_menu_on_left_click(false)"));
-        assert!(source.contains(".on_tray_icon_event"));
+        let left_click = concat!(".show_menu_on_", "left_click(false)");
+        assert!(source.contains(left_click));
+        let tray_event = concat!(".on_tray_", "icon_event");
+        assert!(source.contains(tray_event));
         let show_call = concat!("panel.", "show()");
         assert_eq!(
             source.matches(show_call).count(),

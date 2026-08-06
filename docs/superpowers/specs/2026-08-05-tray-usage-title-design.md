@@ -27,7 +27,7 @@ battery percentage), so the widget window can stay hidden until toggled.
 All Rust-side; no frontend changes.
 
 1. **`src-tauri/src/tray.rs`** — new module with pure
-   `tray_title(&[UsageSnapshot]) -> Option<String>` doing the formatting above.
+   `tray_title(&HashMap<String, UsageSnapshot>) -> Option<String>` doing the formatting above.
    Providers are ordered Claude, Codex regardless of map iteration order.
 2. **`lib.rs`** — tray built with `TrayIconBuilder::with_id("main")`;
    `show_menu_on_left_click(false)`; `on_tray_icon_event` toggles the panel on

@@ -357,7 +357,8 @@ mod tests {
     #[test]
     fn poll_loop_refreshes_tray_title() {
         let source = include_str!("poll.rs");
-        assert!(source.contains("tray::tray_title"));
+        let title_call = concat!("tray::", "tray_title");
+        assert!(source.contains(title_call));
         assert!(source.contains("tray_by_id(\"main\")"));
     }
 }

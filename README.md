@@ -8,6 +8,7 @@ Mana lives in the menu bar and keeps its expanded party roster available at a gl
 
 ## Features
 
+- Menu-bar usage readout: remaining session·weekly percent per provider (e.g. `C 61·12 X 88·54`)
 - Claude Code session, weekly, and model-specific limits
 - Codex weekly subscription usage
 - Generated pixel-art outer frames for every rank
@@ -33,7 +34,7 @@ Mana shows only providers with usable local credentials. You can use it with Cla
 1. Download `Mana-0.4.5-macOS-arm64.zip` from the [latest release](https://github.com/dennisdt/mana/releases/latest).
 2. Unzip it and move `Mana.app` into `/Applications`.
 3. Right-click `Mana.app`, choose **Open**, then confirm **Open** on first launch.
-4. Click the mana potion in the macOS menu bar to show or hide the widget.
+4. The widget starts hidden. Left-click the mana potion in the menu bar to show or hide it; right-click for the menu. Remaining usage shows next to the icon.
 
 The downloadable build is ad-hoc signed and is not Apple-notarized, so opening it normally for the first time may be blocked by Gatekeeper. The right-click **Open** flow grants the exception without disabling Gatekeeper globally.
 
