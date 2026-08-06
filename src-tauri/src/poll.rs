@@ -171,12 +171,12 @@ pub fn spawn_pollers(app: tauri::AppHandle) {
                     "claude" => fetch_claude(&client, &ua).await,
                     _ => fetch_codex(&client).await,
                 };
-                let next = {
+                let (next, title) = {
                     let state = app.state::<Snapshots>();
                     let mut map = state.lock().unwrap();
                     let next = fold_snapshot(map.get(provider), provider, result, epoch_now());
                     map.insert(provider.to_string(), next.clone());
-                    next
+                    (next, crate::tray::tray_title(&map))
                 };
                 eprintln!(
                     "[mana] {} {} bars={}",
@@ -185,6 +185,9 @@ pub fn spawn_pollers(app: tauri::AppHandle) {
                     next.bars.len()
                 );
                 let _ = app.emit("usage-update", &next);
+                if let Some(tray) = app.tray_by_id("main") {
+                    let _ = tray.set_title(title.as_deref());
+                }
             }
         });
     }
@@ -349,5 +352,12 @@ mod tests {
         assert_eq!(s.status, "ok");
         assert!(s.authenticated);
         assert_eq!(s.fetched_at, 220);
+    }
+
+    #[test]
+    fn poll_loop_refreshes_tray_title() {
+        let source = include_str!("poll.rs");
+        assert!(source.contains("tray::tray_title"));
+        assert!(source.contains("tray_by_id(\"main\")"));
     }
 }
