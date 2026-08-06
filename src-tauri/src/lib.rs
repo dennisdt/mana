@@ -7,7 +7,7 @@ pub mod progress_store;
 pub mod tray;
 
 use tauri::menu::{Menu, MenuItem};
-use tauri::tray::TrayIconBuilder;
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::Manager;
 use tauri_nspanel::{
     tauri_panel, CollectionBehavior, ManagerExt, PanelLevel, StyleMask, WebviewWindowExt,
@@ -33,6 +33,18 @@ const HUD_CORNER_RADIUS: f64 = 8.0;
 fn tray_template_icon() -> tauri::Result<tauri::image::Image<'static>> {
     tauri::image::Image::from_bytes(include_bytes!("../icons/tray-template.png"))
         .map(tauri::image::Image::to_owned)
+}
+
+fn toggle_widget(app: &tauri::AppHandle) {
+    if let (Some(win), Ok(panel)) =
+        (app.get_webview_window("main"), app.get_webview_panel("main"))
+    {
+        if win.is_visible().unwrap_or(true) {
+            panel.hide();
+        } else {
+            panel.show();
+        }
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -74,31 +86,30 @@ pub fn run() {
                     .stationary()
                     .into(),
             );
-            panel.show(); // orderFrontRegardless — no activation
 
             let toggle = MenuItem::with_id(app, "toggle", "Show / Hide", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit Mana", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&toggle, &quit])?;
-            TrayIconBuilder::new()
+            TrayIconBuilder::with_id("main")
                 .icon(tray_template_icon()?)
                 .icon_as_template(true)
                 .tooltip("Mana")
                 .menu(&menu)
-                .show_menu_on_left_click(true)
+                .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id().as_ref() {
-                    "toggle" => {
-                        if let (Some(win), Ok(panel)) =
-                            (app.get_webview_window("main"), app.get_webview_panel("main"))
-                        {
-                            if win.is_visible().unwrap_or(true) {
-                                panel.hide();
-                            } else {
-                                panel.show();
-                            }
-                        }
-                    }
+                    "toggle" => toggle_widget(app),
                     "quit" => app.exit(0),
                     _ => {}
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        toggle_widget(tray.app_handle());
+                    }
                 })
                 .build(app)?;
 
@@ -178,5 +189,19 @@ mod tests {
     fn builder_registers_activity_store() {
         let source = include_str!("lib.rs");
         assert!(source.contains(".manage(activity::ActivityStore::default())"));
+    }
+
+    #[test]
+    fn tray_toggles_on_left_click_and_widget_starts_hidden() {
+        let source = include_str!("lib.rs");
+        assert!(source.contains("TrayIconBuilder::with_id(\"main\")"));
+        assert!(source.contains(".show_menu_on_left_click(false)"));
+        assert!(source.contains(".on_tray_icon_event"));
+        let show_call = concat!("panel.", "show()");
+        assert_eq!(
+            source.matches(show_call).count(),
+            1,
+            "the panel show call must appear only inside toggle_widget, not at startup"
+        );
     }
 }
