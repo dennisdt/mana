@@ -8,7 +8,7 @@ Mana lives in the menu bar and keeps its expanded party roster available at a gl
 
 ## Features
 
-- Menu-bar usage readout: remaining session·weekly percent per provider (e.g. `C 61·12 X 88·54`)
+- Menu-bar usage readout: remaining weekly percent per provider, plus the Claude model limit (e.g. `✳ 61·12 ⎔ 54`)
 - Claude Code session, weekly, and model-specific limits
 - Codex weekly subscription usage
 - Generated pixel-art outer frames for every rank

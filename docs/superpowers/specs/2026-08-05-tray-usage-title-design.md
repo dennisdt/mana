@@ -9,11 +9,14 @@ battery percentage), so the widget window can stay hidden until toggled.
 
 ## Behavior
 
-- Tray title shows remaining percent, session·weekly, per authenticated
-  provider: `C 61·12 X 88·54` (Claude, then Codex, joined by a single space).
+- Tray title shows remaining percent per authenticated provider:
+  `✳ 61·12 ⎔ 54` — Claude glyph `✳` with weekly·model, Codex glyph `⎔` with
+  weekly (Claude, then Codex, joined by a single space).
 - Remaining = `round(100 − used_percent)`, clamped to 0–100. No `%` sign.
-- Bars are selected by id: `session` and `weekly`. If only one exists, show
-  that single number without `·`. The Claude model-scoped bar is excluded.
+- Bars are selected by id per provider: Claude `weekly` then `model`
+  (model = the model-scoped weekly limit, e.g. Fable); Codex `weekly`. If
+  only one listed bar exists, show that single number without `·`. Session
+  bars are excluded.
 - A provider with no usable bars (unauthenticated, or `absent` with empty
   bars) is omitted. If no provider qualifies, the title is cleared — icon only.
 - Stale snapshots display their last values as-is (matches widget behavior).
