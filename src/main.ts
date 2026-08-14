@@ -231,13 +231,11 @@ function applyData(card: HTMLElement, s: Snapshot): void {
 function renderProvider(provider: string): void {
   const s = snapshots.get(provider);
   const card = document.getElementById(`card-${provider}`)!;
-  card.hidden = !providerIsVisible(s);
-  const key =
-    !providerIsVisible(s)
-      ? "unauthenticated"
-      : s && s.status !== "absent" && s.bars.length > 0
-      ? s.bars.map((b) => `${b.id}:${b.label}`).join(",")
-      : "absent";
+  const visible = providerIsVisible(s);
+  card.hidden = !visible;
+  const key = visible
+    ? s!.bars.map((b) => `${b.id}:${b.label}`).join(",")
+    : "hidden";
   if (card.dataset.key !== key) {
     card.dataset.key = key;
     card.innerHTML = cardHtml(s, provider);
@@ -248,7 +246,7 @@ function renderProvider(provider: string): void {
   }
   const stale = s?.status === "stale";
   card.classList.toggle("stale", stale === true);
-  if (s && key !== "absent") applyData(card, s);
+  if (visible) applyData(card, s!);
   tick();
   updateSprites();
   resizeRosterContent();

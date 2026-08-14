@@ -37,13 +37,11 @@ describe("cardHtml", () => {
     expect(html).toContain('class="fill" data-empty="true" style="width:0px"');
   });
 
-  it("keeps the provider roster shell when data is absent", () => {
-    const html = cardHtml(undefined, "claude");
-    expect(html).toContain('class="aura"');
-    expect(html).toContain('class="sprite claude-mage"');
-    expect(html).toContain('data-state="idle" data-frame="0"');
-    expect(html).toContain("Claude");
-    expect(html).toContain("log in via the claude CLI");
+  it("renders nothing when data is absent or missing", () => {
+    expect(cardHtml(undefined, "claude")).toBe("");
+    expect(
+      cardHtml({ ...weeklyOnly, authenticated: true, status: "absent", bars: [] }, "claude"),
+    ).toBe("");
   });
 
   it("omits the superseded activity indicator", () => {
@@ -63,14 +61,15 @@ describe("cardHtml", () => {
 });
 
 describe("providerIsVisible", () => {
-  it("hides only explicitly unauthenticated providers", () => {
+  it("hides unauthenticated providers and providers without bars", () => {
     expect(providerIsVisible({ ...weeklyOnly, authenticated: false })).toBe(false);
-    expect(providerIsVisible({ ...weeklyOnly, authenticated: true, status: "absent", bars: [] })).toBe(true);
+    expect(providerIsVisible({ ...weeklyOnly, authenticated: true, status: "absent", bars: [] })).toBe(false);
+    expect(providerIsVisible(undefined)).toBe(false);
   });
 
-  it("keeps startup and legacy snapshots visible", () => {
-    expect(providerIsVisible(undefined)).toBe(true);
+  it("keeps providers with bars visible, including legacy and stale snapshots", () => {
     expect(providerIsVisible(weeklyOnly)).toBe(true);
+    expect(providerIsVisible({ ...weeklyOnly, authenticated: true, status: "stale" })).toBe(true);
   });
 });
 

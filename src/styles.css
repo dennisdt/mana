@@ -724,12 +724,6 @@ body {
   filter: saturate(0.42);
 }
 
-.empty {
-  color: var(--ink-dim);
-  font-size: 11px;
-  line-height: 1.4;
-}
-
 /* Rank themes select the mana-bar foreground and tint interactive ceremony
    surfaces. Generated perimeter art is resolved independently. */
 #root[data-rank="naked"] {

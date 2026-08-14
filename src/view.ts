@@ -18,7 +18,9 @@ export type Snapshot = {
 };
 
 export function providerIsVisible(snapshot: Snapshot | undefined): boolean {
-  return snapshot?.authenticated !== false;
+  return (
+    snapshot !== undefined && snapshot.authenticated !== false && snapshot.bars.length > 0
+  );
 }
 
 function esc(value: string): string {
@@ -41,16 +43,13 @@ function barHtml(snapshot: Snapshot, bar: Bar, index: number): string {
 }
 
 export function cardHtml(snapshot: Snapshot | undefined, provider: string): string {
-  if (!providerIsVisible(snapshot)) return "";
+  if (snapshot === undefined || !providerIsVisible(snapshot)) return "";
   const name = provider === "claude" ? "Claude" : "Codex";
-  const hasData = snapshot && snapshot.status !== "absent" && snapshot.bars.length > 0;
-  const rows = hasData
-    ? `<div class="rows">${snapshot.bars.map((bar, index) => `<div class="row">
+  const rows = `<div class="rows">${snapshot.bars.map((bar, index) => `<div class="row">
         <span class="lbl">${esc(bar.label)}</span>
         ${barHtml(snapshot, bar, index)}
         <span class="val"><b class="pct" data-bar="${index}"></b><span class="cd" data-bar="${index}"></span></span>
-      </div>`).join("")}</div>`
-    : `<div class="empty">no data - log in via the ${provider} CLI</div>`;
+      </div>`).join("")}</div>`;
   return `<div class="familiar-slot">${auraHtml(provider)}${spriteHtml(provider)}</div>
     <div class="provider-content">
       <div class="head"><strong>${name}</strong><span class="plan"></span><span class="age"></span></div>
