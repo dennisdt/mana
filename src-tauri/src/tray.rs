@@ -1,6 +1,14 @@
 use std::collections::HashMap;
+use std::sync::Mutex;
 
-use crate::poll::UsageSnapshot;
+use tauri::Manager;
+
+use crate::poll::{Snapshots, UsageSnapshot};
+
+/// Last title written to the tray. Serializes concurrent poller updates and
+/// skips writes when the title is unchanged.
+#[derive(Default)]
+pub struct TrayTitle(Mutex<Option<String>>);
 
 fn remaining(used_percent: f64) -> i64 {
     (100.0 - used_percent).round().clamp(0.0, 100.0) as i64
@@ -24,7 +32,7 @@ fn provider_segment(glyph: &str, bar_ids: &[&str], snapshot: &UsageSnapshot) -> 
 
 pub fn tray_title(snapshots: &HashMap<String, UsageSnapshot>) -> Option<String> {
     let providers: [(&str, &str, &[&str]); 2] = [
-        ("claude", "✳", &["weekly", "model"]),
+        ("claude", "✳\u{fe0e}", &["weekly", "model"]),
         ("codex", "⎔", &["weekly"]),
     ];
     let segments: Vec<String> = providers
@@ -37,6 +45,33 @@ pub fn tray_title(snapshots: &HashMap<String, UsageSnapshot>) -> Option<String> 
         None
     } else {
         Some(segments.join(" "))
+    }
+}
+
+/// Recompute the title from the full snapshot map and apply it when changed.
+/// Lock order is TrayTitle, then Snapshots; the main thread only ever takes
+/// Snapshots (`get_snapshots`), so holding TrayTitle across `set_title`'s
+/// blocking main-thread round trip cannot deadlock.
+pub fn update_tray_title(app: &tauri::AppHandle) {
+    let title_state = app.state::<TrayTitle>();
+    let mut last = title_state.0.lock().unwrap();
+    let title = {
+        let snapshots = app.state::<Snapshots>();
+        let map = snapshots.lock().unwrap();
+        tray_title(&map)
+    };
+    if *last == title {
+        return;
+    }
+    let Some(tray) = app.tray_by_id("main") else {
+        eprintln!("[mana] tray \"main\" missing; title not updated");
+        return;
+    };
+    // tray-icon's macOS backend ignores a None title, so writing an empty
+    // string is the only way to clear a previously shown title.
+    match tray.set_title(Some(title.as_deref().unwrap_or(""))) {
+        Ok(()) => *last = title,
+        Err(error) => eprintln!("[mana] tray title update failed: {error}"),
     }
 }
 
@@ -75,7 +110,7 @@ mod tests {
             ("claude", snap(true, vec![bar("weekly", 39.0), bar("model", 88.0)])),
             ("codex", snap(true, vec![bar("session", 12.0), bar("weekly", 46.0)])),
         ]);
-        assert_eq!(tray_title(&snapshots).as_deref(), Some("✳ 61·12 ⎔ 54"));
+        assert_eq!(tray_title(&snapshots).as_deref(), Some("✳\u{fe0e} 61·12 ⎔ 54"));
     }
 
     #[test]
@@ -84,13 +119,13 @@ mod tests {
             ("codex", snap(true, vec![bar("weekly", 0.0)])),
             ("claude", snap(true, vec![bar("weekly", 0.0)])),
         ]);
-        assert_eq!(tray_title(&snapshots).as_deref(), Some("✳ 100 ⎔ 100"));
+        assert_eq!(tray_title(&snapshots).as_deref(), Some("✳\u{fe0e} 100 ⎔ 100"));
     }
 
     #[test]
     fn single_claude_bar_has_no_separator() {
         let snapshots = map(vec![("claude", snap(true, vec![bar("model", 39.4)]))]);
-        assert_eq!(tray_title(&snapshots).as_deref(), Some("✳ 61"));
+        assert_eq!(tray_title(&snapshots).as_deref(), Some("✳\u{fe0e} 61"));
     }
 
     #[test]
@@ -99,7 +134,7 @@ mod tests {
             ("claude", snap(true, vec![bar("session", 10.0), bar("weekly", 50.0)])),
             ("codex", snap(true, vec![bar("session", 10.0), bar("primary", 20.0)])),
         ]);
-        assert_eq!(tray_title(&snapshots).as_deref(), Some("✳ 50"));
+        assert_eq!(tray_title(&snapshots).as_deref(), Some("✳\u{fe0e} 50"));
     }
 
     #[test]
@@ -117,11 +152,22 @@ mod tests {
     }
 
     #[test]
+    fn update_clears_title_with_empty_string() {
+        let source = include_str!("tray.rs");
+        assert!(source.contains("unwrap_or(\"\")"));
+        let no_op_clear = concat!("set_title(", "None)");
+        assert!(
+            !source.contains(no_op_clear),
+            "clearing the title must write an empty string; a None title is a macOS no-op"
+        );
+    }
+
+    #[test]
     fn out_of_range_percents_clamp() {
         let snapshots = map(vec![(
             "claude",
             snap(true, vec![bar("weekly", 120.0), bar("model", -5.0)]),
         )]);
-        assert_eq!(tray_title(&snapshots).as_deref(), Some("✳ 0·100"));
+        assert_eq!(tray_title(&snapshots).as_deref(), Some("✳\u{fe0e} 0·100"));
     }
 }

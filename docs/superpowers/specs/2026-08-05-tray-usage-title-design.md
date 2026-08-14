@@ -35,16 +35,18 @@ All Rust-side; no frontend changes.
 2. **`lib.rs`** — tray built with `TrayIconBuilder::with_id("main")`;
    `show_menu_on_left_click(false)`; `on_tray_icon_event` toggles the panel on
    left-click up. Remove the startup `panel.show()`.
-3. **`poll.rs`** — after each snapshot fold, recompute the title from the full
-   snapshot map and `app.tray_by_id("main").set_title(...)`.
+3. **`poll.rs`** — after each snapshot fold, call `tray::update_tray_title`,
+   which serializes writers behind a `TrayTitle` mutex, recomputes from the
+   full snapshot map, skips unchanged titles, and clears with an empty string
+   (`set_title(None)` is a no-op in tray-icon's macOS backend).
 
 Rejected: rendering mini bar graphics into the tray bitmap (DPI/theme cost,
 ~10× the code, no informational gain).
 
 ## Error handling
 
-- `tray_by_id` miss or `set_title` failure: ignore — next poll retries; the
-  widget remains the fallback surface.
+- `tray_by_id` miss or `set_title` failure: log to stderr and retry next
+  poll; the widget remains the fallback surface.
 - Malformed/missing bars degrade per the omission rules above; never panic.
 
 ## Testing

@@ -57,6 +57,7 @@ pub fn run() {
                 .build(),
         )
         .manage(poll::Snapshots::default())
+        .manage(tray::TrayTitle::default())
         .manage(activity::ActivityStore::default())
         .setup(|app| {
             // Menu-bar-only app: no Dock icon, never activates as a regular app.

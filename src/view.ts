@@ -17,7 +17,7 @@ export type Snapshot = {
   fetched_at: number;
 };
 
-export function providerIsVisible(snapshot: Snapshot | undefined): boolean {
+export function providerIsVisible(snapshot: Snapshot | undefined): snapshot is Snapshot {
   return (
     snapshot !== undefined && snapshot.authenticated !== false && snapshot.bars.length > 0
   );
@@ -43,7 +43,7 @@ function barHtml(snapshot: Snapshot, bar: Bar, index: number): string {
 }
 
 export function cardHtml(snapshot: Snapshot | undefined, provider: string): string {
-  if (snapshot === undefined || !providerIsVisible(snapshot)) return "";
+  if (!providerIsVisible(snapshot)) return "";
   const name = provider === "claude" ? "Claude" : "Codex";
   const rows = `<div class="rows">${snapshot.bars.map((bar, index) => `<div class="row">
         <span class="lbl">${esc(bar.label)}</span>

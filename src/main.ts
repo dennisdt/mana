@@ -234,7 +234,7 @@ function renderProvider(provider: string): void {
   const visible = providerIsVisible(s);
   card.hidden = !visible;
   const key = visible
-    ? s!.bars.map((b) => `${b.id}:${b.label}`).join(",")
+    ? s.bars.map((b) => `${b.id}:${b.label}`).join(",")
     : "hidden";
   if (card.dataset.key !== key) {
     card.dataset.key = key;
@@ -246,7 +246,7 @@ function renderProvider(provider: string): void {
   }
   const stale = s?.status === "stale";
   card.classList.toggle("stale", stale === true);
-  if (visible) applyData(card, s!);
+  if (visible) applyData(card, s);
   tick();
   updateSprites();
   resizeRosterContent();

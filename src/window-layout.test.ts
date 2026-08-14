@@ -41,6 +41,14 @@ describe("permanent roster geometry", () => {
     });
   });
 
+  it("starts the widget hidden", () => {
+    const mainWindow = tauriConfig.app.windows.find(
+      ({ label }) => label === "main",
+    );
+
+    expect(mainWindow).toMatchObject({ visible: false });
+  });
+
   it("keeps an origin that fits the active work area", () => {
     expect(
       rosterOrigin(
