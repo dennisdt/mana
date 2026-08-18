@@ -242,6 +242,16 @@ describe("generated application perimeter", () => {
     expect(glass).not.toMatch(/box-shadow/);
   });
 
+  it("dresses the glass with a specular rim and sheen of pure light", () => {
+    const specular = styles.match(/#glass::before\s*\{([^}]*)\}/s)?.[1] ?? "";
+    expect(specular).toMatch(/pointer-events:\s*none/);
+    expect(specular).toMatch(/border-radius:\s*inherit/);
+    expect(specular).toMatch(/border:\s*1px solid rgba\(255, 255, 255/);
+    expect(specular).toMatch(/inset 0 1px 0 rgba\(255, 255, 255/);
+    // Light only — any opaque or dark fill would bury the native material.
+    expect(specular).not.toMatch(/rgba\(\s*(?:[0-9]|1[0-9]|2[0-9])\s*,[^)]*0\.[3-9]/);
+  });
+
   it("retires the perimeter frame art in favor of the native glass sheet", () => {
     expect(indexHtml).toContain('<div id="glass" class="glass-island">');
     expect(indexHtml).not.toContain('id="perimeter"');

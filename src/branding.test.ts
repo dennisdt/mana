@@ -96,13 +96,13 @@ describe("Mana product identity", () => {
     expect(readme).toContain("src-tauri/target/release/bundle/macos/Mana.app");
   });
 
-  it("keeps release version 0.4.5 synchronized", () => {
-    expect(packageJson.version).toBe("0.4.5");
-    expect(packageLock.version).toBe("0.4.5");
-    expect(packageLock.packages[""].version).toBe("0.4.5");
-    expect(tauriConfig.version).toBe("0.4.5");
-    expect(cargoToml).toMatch(/^version = "0\.4\.5"$/m);
-    expect(cargoLock).toMatch(/name = "mana"\nversion = "0\.4\.5"/);
+  it("keeps release version 0.5.0 synchronized", () => {
+    expect(packageJson.version).toBe("0.5.0");
+    expect(packageLock.version).toBe("0.5.0");
+    expect(packageLock.packages[""].version).toBe("0.5.0");
+    expect(tauriConfig.version).toBe("0.5.0");
+    expect(cargoToml).toMatch(/^version = "0\.5\.0"$/m);
+    expect(cargoLock).toMatch(/name = "mana"\nversion = "0\.5\.0"/);
   });
 
   it("preserves the approved square icon master", () => {

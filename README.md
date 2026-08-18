@@ -24,14 +24,14 @@ Mana lives in the menu bar and keeps its expanded party roster available at a gl
 ## Requirements
 
 - macOS (macOS 26 Tahoe or newer for the Liquid Glass panel; older versions get a blur fallback)
-- Apple Silicon for the downloadable v0.4.5 binary
+- Apple Silicon for the downloadable v0.5.0 binary
 - An authenticated Claude Code and/or Codex CLI session
 
 Mana shows only providers with usable local credentials. You can use it with Claude Code, Codex, or both.
 
 ## Install
 
-1. Download `Mana-0.4.5-macOS-arm64.zip` from the [latest release](https://github.com/dennisdt/mana/releases/latest).
+1. Download `Mana-0.5.0-macOS-arm64.zip` from the [latest release](https://github.com/dennisdt/mana/releases/latest).
 2. Unzip it and move `Mana.app` into `/Applications`.
 3. Right-click `Mana.app`, choose **Open**, then confirm **Open** on first launch.
 4. The widget starts hidden. Left-click the mana potion in the menu bar to show or hide it; right-click for the menu. Remaining usage shows next to the icon.
@@ -109,7 +109,7 @@ The preview accepts every rank name, `prestige=0` through `10`, `providers=claud
 
 ## Known Limitations
 
-- The v0.4.5 release binary supports Apple Silicon only.
+- The v0.5.0 release binary supports Apple Silicon only.
 - The release is not Developer ID signed or Apple-notarized.
 - Claude and Codex usage endpoints are undocumented and may change without notice.
 - Mana depends on credential formats written by the corresponding CLIs.
