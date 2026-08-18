@@ -173,12 +173,14 @@ describe("fantasy gaming HUD stylesheet", () => {
     expect(styles).not.toMatch(/#card section \+ section\s*\{/);
   });
 
-  it("keeps provider content and the footer inside the generated frame safe area", () => {
+  it("keeps provider content and the footer inside the glass safe area", () => {
+    expect(indexHtml).toContain('<div id="glass" class="glass-island">');
+    expect(indexHtml).not.toContain("data-glass-capsule");
     expect(styles).toMatch(
       /#card\s*\{[^}]*padding:\s*24px 32px 20px/s,
     );
     expect(styles).toMatch(
-      /#root\[data-frame-art="true"\] #progress\s*\{[^}]*padding:\s*10px 36px 18px/s,
+      /#progress\s*\{[^}]*padding:\s*10px 36px 18px/s,
     );
     expect(styles).toMatch(
       /#card section\s*\{[^}]*grid-template-columns:\s*70px minmax\(0, 1fr\)/s,
@@ -188,20 +190,24 @@ describe("fantasy gaming HUD stylesheet", () => {
 });
 
 describe("concentric nested corner radii", () => {
-  it("keeps the vibrancy blur radius equal to the CSS --hud-radius", () => {
+  it("keeps the native glass radius equal to the CSS --hud-radius", () => {
     const cssRadius = styles.match(/--hud-radius:\s*(\d+(?:\.\d+)?)px/)?.[1];
     const rustRadius = librs.match(/HUD_CORNER_RADIUS:\s*f64\s*=\s*(\d+(?:\.\d+)?)/)?.[1];
     expect(cssRadius).toBeDefined();
     expect(rustRadius).toBeDefined();
     expect(Number(rustRadius)).toBe(Number(cssRadius));
-    expect(librs).toMatch(/apply_vibrancy\([^;]*Some\(HUD_CORNER_RADIUS\),\s*\)\?;/s);
+    // Islands take their radius from the CSS var via main.ts; the vibrancy
+    // fallback sheet stays pinned to the Rust constant.
+    expect(mainSource).toContain('getPropertyValue("--hud-radius")');
+    expect(librs).toMatch(/setCornerRadius\(island\.radius\)/);
+    expect(librs).toMatch(/apply_vibrancy\([^;]*Some\(HUD_CORNER_RADIUS\),\s*\)/s);
+    expect(librs).toContain("set_glass_islands,");
   });
 
-  it("keeps one continuous fallback outline on the flush glass", () => {
-    expect(styles).toMatch(
-      /#glass\s*\{[^}]*inset:\s*0[^}]*border:\s*1px solid[^}]*border-radius:\s*var\(--hud-radius\)/s,
-    );
-    expect(styles).not.toMatch(/border-style:\s*(?:dotted|dashed)/);
+  it("leaves edge lighting to the native glass instead of a CSS border", () => {
+    const glass = styles.match(/#glass\s*\{([^}]*)\}/s)?.[1] ?? "";
+    expect(glass).toMatch(/border-radius:\s*var\(--hud-radius\)/);
+    expect(glass).not.toMatch(/\bborder:/);
     expect(styles).not.toContain("--corner-tick");
   });
 
@@ -230,132 +236,24 @@ describe("generated application perimeter", () => {
     expect(styles).not.toMatch(/#root::(?:before|after)/);
   });
 
-  it("composes native pixel-art pieces without stretching complete frames", () => {
-    const perimeterStyles = styles.slice(styles.indexOf("#perimeter"));
-    expect(styles).toMatch(
-      /#perimeter\s*\{[^}]*position:\s*absolute[^}]*inset:\s*0[^}]*pointer-events:\s*none/s,
-    );
-    expect(styles).toMatch(
-      /\.frame-corner\s*\{[^}]*width:\s*32px[^}]*height:\s*32px[^}]*image-rendering:\s*pixelated/s,
-    );
-    expect(styles).toMatch(
-      /\.frame-crest\s*\{[^}]*display:\s*none/s,
-    );
-    const horizontal =
-      styles.match(
-        /\.frame-rail--top,\s*\.frame-rail--bottom\s*\{([^}]*)\}/s,
-      )?.[1] ?? "";
-    const vertical =
-      styles.match(
-        /\.frame-rail--right,\s*\.frame-rail--left\s*\{([^}]*)\}/s,
-      )?.[1] ?? "";
-    expect(horizontal).toMatch(/background-size:\s*64px 16px/);
-    expect(horizontal).toMatch(/background-repeat:\s*repeat-x/);
-    expect(vertical).toMatch(/background-size:\s*16px 64px/);
-    expect(vertical).toMatch(/background-repeat:\s*repeat-y/);
-    expect(perimeterStyles).toContain("background-size: 64px 16px");
+  it("lets the native glass paint the panel background", () => {
+    const glass = styles.match(/#glass\s*\{([^}]*)\}/s)?.[1] ?? "";
+    expect(glass).not.toMatch(/background/);
+    expect(glass).not.toMatch(/box-shadow/);
   });
 
-  it("underlaps rails beneath transparent corner padding", () => {
-    const horizontal =
-      styles.match(
-        /\.frame-rail--top,\s*\.frame-rail--bottom\s*\{([^}]*)\}/s,
-      )?.[1] ?? "";
-    const vertical =
-      styles.match(
-        /\.frame-rail--right,\s*\.frame-rail--left\s*\{([^}]*)\}/s,
-      )?.[1] ?? "";
-    const corner = styles.match(/\.frame-corner\s*\{([^}]*)\}/s)?.[1] ?? "";
-
-    expect(horizontal).toMatch(/right:\s*16px/);
-    expect(horizontal).toMatch(/left:\s*16px/);
-    expect(vertical).toMatch(/top:\s*16px/);
-    expect(vertical).toMatch(/bottom:\s*16px/);
-    expect(corner).toMatch(/z-index:\s*3/);
-  });
-
-  it("renders authored directional corners without opaque square cap faces", () => {
-    const corner = styles.match(/\.frame-corner\s*\{([^}]*)\}/s)?.[1] ?? "";
-    expect(corner).toMatch(/width:\s*32px/);
-    expect(corner).toMatch(/height:\s*32px/);
-    expect(corner).toMatch(/background-color:\s*transparent/);
-    expect(corner).toMatch(
-      /background-image:\s*var\(--frame-rank-corner-piece,\s*none\)/,
-    );
-    expect(corner).toMatch(/background-size:\s*48px 48px/);
-    expect(corner).toMatch(
-      /filter:\s*drop-shadow\(0 0 4px var\(--cap-glow\)\)/,
-    );
-    expect(corner).not.toMatch(/box-shadow/);
-    expect(styles).not.toContain("--frame-corner-emblem");
-    expect(styles).not.toContain("data-corner-emblem");
-  });
-
-  it("keeps Platinum rank corners as bright as its silver rails", () => {
-    expect(styles).toMatch(
-      /#root\[data-rank="platinum"\] #perimeter\[data-corner-surface="false"\] \.frame-corner\s*\{[^}]*filter:\s*brightness\(1\.35\)\s*contrast\(0\.72\)\s*drop-shadow\(0 0 4px var\(--cap-glow\)\)/s,
-    );
-  });
-
-  it("maps each corner to matching rank art and prestige joint art", () => {
-    const directions = {
-      tl: { position: "left top", surface: "tl" },
-      tr: { position: "right top", surface: "tr" },
-      bl: { position: "left bottom", surface: "bl" },
-      br: { position: "right bottom", surface: "br" },
-    } as const;
-
-    for (const [corner, { position, surface }] of Object.entries(directions)) {
-      const rule =
-        styles.match(
-          new RegExp(`\\.frame-corner--${corner}\\s*\\{([^}]*)\\}`, "s"),
-        )?.[1] ?? "";
-      expect(rule, corner).toContain(
-        `--frame-rank-corner-piece: var(--frame-rank-corner-${corner})`,
-      );
-      expect(rule, corner).toContain(
-        `--frame-prestige-corner-piece: var(--frame-corner-surface-${surface})`,
-      );
-      expect(rule, corner).toContain(`background-position: ${position}`);
-    }
-
-    expect(styles).toMatch(
-      /#perimeter\[data-corner-surface="true"\] \.frame-corner\s*\{[^}]*background-image:\s*var\(--frame-prestige-corner-piece,\s*none\)/s,
-    );
-  });
-
-  it("evenly spaces one ornament lane per side", () => {
-    expect(styles).toMatch(
-      /\.frame-ornaments--top,[^}]*\.frame-ornaments--bottom\s*\{[^}]*display:\s*grid[^}]*grid-auto-flow:\s*column[^}]*justify-content:\s*space-evenly/s,
-    );
-    expect(styles).toMatch(
-      /\.frame-ornaments--right,[^}]*\.frame-ornaments--left\s*\{[^}]*display:\s*grid[^}]*grid-auto-flow:\s*row[^}]*align-content:\s*space-evenly/s,
-    );
-  });
-
-  it("limits motion to prestige seven through ten highlights and flashes", () => {
-    expect(styles).toMatch(
-      /#perimeter\[data-prestige="7"\][^{,]*\.frame-rail::after/s,
-    );
-    expect(styles).toContain("@keyframes prestige-rail-light");
-    expect(styles).toContain("@keyframes prestige-corner-flash");
-    expect(styles).not.toContain("champion-radiance");
-    expect(styles).not.toContain("godlike-halo");
-    const reducedMotion = styles.slice(
-      styles.indexOf("@media (prefers-reduced-motion: reduce)"),
-    );
-    expect(reducedMotion).toMatch(
-      /\.frame-rail::after,[^}]*\.frame-corner::after\s*\{[^}]*animation:\s*none/s,
-    );
-  });
-
-  it("retires the old CSS frame and stacked badge paths", () => {
-    expect(indexHtml).toContain('<div id="glass">');
-    expect(indexHtml).toContain('<div id="perimeter" aria-hidden="true"></div>');
+  it("retires the perimeter frame art in favor of the native glass sheet", () => {
+    expect(indexHtml).toContain('<div id="glass" class="glass-island">');
+    expect(indexHtml).not.toContain('id="perimeter"');
     expect(indexHtml).not.toContain('id="frame"');
     expect(indexHtml).not.toContain('class="badges"');
+    expect(styles).not.toContain("#perimeter");
+    expect(styles).not.toContain(".frame-rail");
+    expect(styles).not.toContain(".frame-corner");
+    expect(styles).not.toContain("data-frame-art");
     expect(styles).not.toContain("#frame");
     expect(styles).not.toContain(".badge");
+    expect(mainSource).not.toContain("perimeter");
     expect(mainSource).not.toContain("badgeSlots");
     expect(mainSource).not.toContain("badgeHtml");
     expect(mainSource).not.toContain("/badges/");

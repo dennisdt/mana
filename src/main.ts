@@ -26,10 +26,7 @@ import {
 import { resolveAura } from "./aura-assets";
 import { auraFrameAt, auraFrameDelayAt } from "./aura-animation";
 import { cardHtml, providerIsVisible, type Snapshot } from "./view";
-import {
-  createFrameDecorationUpdater,
-  frameLayerHtml,
-} from "./frame-renderer";
+import { createPrestigeCrestUpdater } from "./frame-renderer";
 import {
   createSerialQueue,
   rosterOrigin,
@@ -48,9 +45,9 @@ const spriteMotionPreference = window.matchMedia("(prefers-reduced-motion: reduc
 let spriteFrameTimer: ReturnType<typeof setTimeout> | undefined;
 const auraMotionPreference = spriteMotionPreference;
 let auraFrameTimer: ReturnType<typeof setTimeout> | undefined;
-const perimeter = document.getElementById("perimeter")!;
-perimeter.innerHTML = frameLayerHtml();
-const updateFrameDecoration = createFrameDecorationUpdater(perimeter);
+const updatePrestigeCrest = createPrestigeCrestUpdater(
+  document.getElementById("root")!,
+);
 
 function spriteState(provider: string): string {
   if (moving || hovering) return "hover";
@@ -305,7 +302,7 @@ function renderProgress(p: Progress): void {
   footer.querySelector<HTMLElement>(".xpfill")!.style.width =
     `${xpBarFraction(p) * 100}%`;
   updateRankSheets(p.tier);
-  void updateFrameDecoration(p.tier, p.prestige);
+  void updatePrestigeCrest(p.tier, p.prestige);
   applyAuras();
   syncAuraFrames();
   resizeRosterContent();
@@ -348,7 +345,31 @@ function resizeRosterContent(): void {
       : position;
     await win.setSize(new LogicalSize(size.width, size.height));
     await win.setPosition(new PhysicalPosition(target.x, target.y));
+    syncGlassIslands();
   });
+}
+
+// Each .glass-island element gets a matching native NSGlassEffectView; the
+// footer opts into a capsule via data-glass-capsule. CSS px equal points at
+// the widget's 1x zoom, so rects pass through unconverted.
+function syncGlassIslands(): void {
+  const hudRadius = Number.parseFloat(
+    getComputedStyle(document.documentElement).getPropertyValue("--hud-radius"),
+  );
+  const islands = [];
+  for (const element of document.querySelectorAll<HTMLElement>(".glass-island")) {
+    const rect = element.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) continue;
+    islands.push({
+      x: rect.x,
+      y: rect.y,
+      width: rect.width,
+      height: rect.height,
+      radius:
+        element.dataset.glassCapsule === "true" ? rect.height / 2 : hudRadius,
+    });
+  }
+  void invoke("set_glass_islands", { islands });
 }
 
 document.body.addEventListener("mouseenter", () => {

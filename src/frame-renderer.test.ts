@@ -1,11 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ResolvedFrameDecoration } from "./frame-assets";
-import {
-  applyFrameDecoration,
-  createFrameDecorationUpdater,
-  frameLayerHtml,
-  frameRenderPlan,
-} from "./frame-renderer";
+import { applyPrestigeCrest, createPrestigeCrestUpdater } from "./frame-renderer";
 
 function decoration(
   overrides: Partial<ResolvedFrameDecoration> = {},
@@ -27,12 +22,7 @@ function decoration(
         bl: "/rank/corner-bl.png",
         br: "/rank/corner-br.png",
       },
-      ornaments: {
-        top: "/rank/ornament-h.png",
-        right: "/rank/ornament-v.png",
-        bottom: "/rank/ornament-h.png",
-        left: "/rank/ornament-v.png",
-      },
+      ornaments: {},
       crestTop: "/rank/crest-top.png",
     },
     prestige: {
@@ -51,12 +41,6 @@ function decoration(
       },
       ornaments: {},
       crestTop: "/prestige/crest-top.png",
-      cornerSurfaces: {
-        tl: "/prestige/corner-joint-tl.png",
-        tr: "/prestige/corner-joint-tr.png",
-        bl: "/prestige/corner-joint-bl.png",
-        br: "/prestige/corner-joint-br.png",
-      },
     },
     prestigeText: "X",
     diagnostics: [],
@@ -75,130 +59,34 @@ class FakeStyle {
 class FakeElement {
   readonly dataset: Record<string, string> = {};
   readonly style = new FakeStyle();
-  readonly children = new Map<string, FakeElement>();
-  innerHTML = "";
-  textContent = "";
-  parentElement: FakeElement | null = null;
-
-  querySelector(selector: string): FakeElement | null {
-    return this.children.get(selector) ?? null;
-  }
 }
 
-function fakePerimeter(): FakeElement {
-  const perimeter = new FakeElement();
-  const host = new FakeElement();
-  perimeter.parentElement = host;
-  for (const side of ["top", "right", "bottom", "left"]) {
-    perimeter.children.set(
-      `[data-frame-ornaments="${side}"]`,
-      new FakeElement(),
+describe("prestige crest decoration", () => {
+  it("marks the root and points the crest variable at prestige art", () => {
+    const root = new FakeElement();
+
+    applyPrestigeCrest(root as unknown as HTMLElement, decoration());
+
+    expect(root.style.values.get("--progress-prestige-crest")).toBe(
+      'url("/prestige/crest-top.png")',
     );
-  }
-  return perimeter;
-}
-
-describe("generated frame perimeter", () => {
-  it("renders one normalized perimeter structure", () => {
-    const html = frameLayerHtml();
-
-    expect((html.match(/data-frame-rail=/g) ?? [])).toHaveLength(4);
-    expect((html.match(/data-frame-corner=/g) ?? [])).toHaveLength(4);
-    expect((html.match(/data-frame-ornaments=/g) ?? [])).toHaveLength(4);
-    expect((html.match(/data-frame-crest/g) ?? [])).toHaveLength(1);
-    expect(html).not.toContain("data-prestige-text");
-    expect(html).not.toContain("badge");
+    expect(root.dataset.prestigeCrest).toBe("true");
   });
 
-  it("uses one composited rail and corner set with deterministic ornament lanes", () => {
-    const plan = frameRenderPlan(decoration());
+  it("hides the crest when the pilot has no prestige", () => {
+    const root = new FakeElement();
 
-    expect(plan.ornamentCounts).toEqual({
-      top: 0,
-      right: 0,
-      bottom: 0,
-      left: 0,
-    });
-    expect(plan.prestigeText).toBe("X");
-    expect(plan.cssVariables).toMatchObject({
-      "--frame-rank-rail-top": 'url("/rank/rail-h.png")',
-      "--frame-prestige-rail-top": 'url("/prestige/rail-h.png")',
-      "--frame-rank-corner-tl": 'url("/rank/corner-tl.png")',
-      "--frame-prestige-corner-tl": 'url("/prestige/corner-tl.png")',
-      "--frame-corner-surface-tl": 'url("/prestige/corner-joint-tl.png")',
-      "--frame-crest": 'url("/rank/crest-top.png")',
-      "--progress-prestige-crest": 'url("/prestige/crest-top.png")',
-      "--frame-ornament-top": "none",
-    });
-  });
-
-  it("keeps all four directional rank corners without repeating the rank crest", () => {
-    const plan = frameRenderPlan(
-      decoration({
-        prestige: null,
-        prestigeText: "",
-      }),
+    applyPrestigeCrest(
+      root as unknown as HTMLElement,
+      decoration({ prestige: null, prestigeText: "" }),
     );
 
-    expect(plan.cssVariables).toMatchObject({
-      "--frame-rank-corner-tl": 'url("/rank/corner-tl.png")',
-      "--frame-rank-corner-tr": 'url("/rank/corner-tr.png")',
-      "--frame-rank-corner-bl": 'url("/rank/corner-bl.png")',
-      "--frame-rank-corner-br": 'url("/rank/corner-br.png")',
-      "--frame-crest": 'url("/rank/crest-top.png")',
-    });
-    expect(plan.cssVariables).not.toHaveProperty("--frame-corner-emblem");
-    expect(plan).not.toHaveProperty("hasCornerEmblem");
-  });
-
-  it("lets prestige ornaments replace rank ornaments in the same four lanes", () => {
-    const model = decoration();
-    model.prestige!.ornaments = {
-      top: "/prestige/ornament-h.png",
-      right: "/prestige/ornament-v.png",
-      bottom: "/prestige/ornament-h.png",
-      left: "/prestige/ornament-v.png",
-    };
-
-    const plan = frameRenderPlan(model);
-
-    expect(plan.cssVariables["--frame-ornament-top"]).toBe(
-      'url("/prestige/ornament-h.png")',
-    );
-    expect(plan.cssVariables["--frame-ornament-left"]).toBe(
-      'url("/prestige/ornament-v.png")',
-    );
-    expect(plan.ornamentCounts).toEqual({
-      top: 2,
-      right: 1,
-      bottom: 2,
-      left: 1,
-    });
-  });
-
-  it("applies one stable set of nodes without accumulating decorations", () => {
-    const perimeter = fakePerimeter();
-    const model = decoration();
-
-    applyFrameDecoration(perimeter as unknown as HTMLElement, model);
-    applyFrameDecoration(perimeter as unknown as HTMLElement, model);
-
-    expect(perimeter.dataset).toMatchObject({
-      rank: "godlike",
-      prestige: "10",
-      cornerSurface: "true",
-    });
-    expect(perimeter.dataset).not.toHaveProperty("cornerEmblem");
-    expect(perimeter.parentElement?.dataset.frameArt).toBe("true");
-    expect(perimeter.parentElement?.dataset.prestigeCrest).toBe("true");
-    expect(perimeter.children.get('[data-frame-ornaments="top"]')?.innerHTML)
-      .toBe("");
-    expect(perimeter.children.get('[data-frame-ornaments="right"]')?.innerHTML)
-      .toBe("");
+    expect(root.style.values.get("--progress-prestige-crest")).toBe("none");
+    expect(root.dataset.prestigeCrest).toBe("false");
   });
 
   it("keeps only the newest asynchronous rank and prestige update", async () => {
-    const perimeter = fakePerimeter();
+    const root = new FakeElement();
     const releases: Array<(model: ResolvedFrameDecoration) => void> = [];
     const resolver = vi.fn(
       () =>
@@ -207,8 +95,8 @@ describe("generated frame perimeter", () => {
         }),
     );
     const applied: string[] = [];
-    const update = createFrameDecorationUpdater(
-      perimeter as unknown as HTMLElement,
+    const update = createPrestigeCrestUpdater(
+      root as unknown as HTMLElement,
       resolver,
       (_element, model) => applied.push(model.resolvedTier),
     );

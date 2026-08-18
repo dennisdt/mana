@@ -21,17 +21,20 @@
 
       #root[data-preview-reduced="true"] .fill::before,
       #root[data-preview-reduced="true"] #progress .xpfill::before,
-      #root[data-preview-reduced="true"] #progress .xpfill::after,
-      #root[data-preview-reduced="true"] .frame-rail::after,
-      #root[data-preview-reduced="true"] .frame-corner::after {
+      #root[data-preview-reduced="true"] #progress .xpfill::after {
         animation: none !important;
+      }
+
+      /* Browser stand-in for the native Liquid Glass islands. */
+      .glass-island {
+        background: rgba(22, 26, 40, 0.88);
       }
     </style>
     <script type="module" src="/src/preview.ts" defer></script>
   </head>
   <body id="preview-root">
     <div id="root">
-      <div id="glass">
+      <div id="glass" class="glass-island">
         <div id="content">
           <div id="card">
             <section id="card-claude" class="provider-card claude"></section>
@@ -43,7 +46,6 @@
           </div>
         </div>
       </div>
-      <div id="perimeter" aria-hidden="true"></div>
     </div>
   </body>
 </html>

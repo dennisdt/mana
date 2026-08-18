@@ -25,10 +25,112 @@ tauri_panel! {
     })
 }
 
-/// Corner radius (points) of the macOS vibrancy blur layer. Must stay equal
-/// to `--hud-radius` in `src/styles.css`, or the blur's rounded corner and
+/// Corner radius (points) of the native glass layer. Must stay equal
+/// to `--hud-radius` in `src/styles.css`, or the glass's rounded corner and
 /// the CSS border corner visibly diverge.
-const HUD_CORNER_RADIUS: f64 = 8.0;
+const HUD_CORNER_RADIUS: f64 = 22.0;
+
+/// Glass behind the webview: Liquid Glass islands (macOS 26+) hosted in one
+/// `NSGlassEffectContainerView` (Apple's grouping for multiple glass elements),
+/// HUD vibrancy blur otherwise. The webview paints no background of its own;
+/// it reports island rectangles via `set_glass_islands` after each layout pass.
+fn apply_hud_glass(window: &tauri::WebviewWindow) -> Result<(), Box<dyn std::error::Error>> {
+    use objc2_app_kit::{
+        NSAutoresizingMaskOptions, NSGlassEffectContainerView, NSView, NSWindowOrderingMode,
+    };
+
+    if objc2::runtime::AnyClass::get(c"NSGlassEffectView").is_some() {
+        let mtm = objc2::MainThreadMarker::new().ok_or("setup must run on the main thread")?;
+        let ns_view = window.ns_view()? as *mut NSView;
+        unsafe {
+            let view = &*ns_view;
+            let resize_with_window = NSAutoresizingMaskOptions::ViewWidthSizable
+                | NSAutoresizingMaskOptions::ViewHeightSizable;
+            let container =
+                NSGlassEffectContainerView::initWithFrame(mtm.alloc(), view.bounds());
+            container.setAutoresizingMask(resize_with_window);
+            let content = NSView::initWithFrame(mtm.alloc(), view.bounds());
+            content.setAutoresizingMask(resize_with_window);
+            container.setContentView(Some(&content));
+            view.addSubview_positioned_relativeTo(&container, NSWindowOrderingMode::Below, None);
+        }
+        return Ok(());
+    }
+
+    // Active state is required: a non-activating panel is never key, and
+    // FollowsWindowActiveState would render the material permanently dim.
+    apply_vibrancy(
+        window,
+        NSVisualEffectMaterial::HudWindow,
+        Some(NSVisualEffectState::Active),
+        Some(HUD_CORNER_RADIUS),
+    )?;
+    Ok(())
+}
+
+/// One glass island, in CSS pixels (== points at the widget's 1x zoom) with a
+/// top-left origin, exactly as `getBoundingClientRect` reports it.
+#[derive(serde::Deserialize)]
+pub struct GlassIsland {
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    radius: f64,
+}
+
+#[tauri::command]
+fn set_glass_islands(window: tauri::WebviewWindow, islands: Vec<GlassIsland>) {
+    let handle = window.clone();
+    let _ = handle.run_on_main_thread(move || {
+        if let Err(error) = sync_glass_islands(&window, &islands) {
+            eprintln!("[mana] glass island sync failed: {error}");
+        }
+    });
+}
+
+fn sync_glass_islands(
+    window: &tauri::WebviewWindow,
+    islands: &[GlassIsland],
+) -> Result<(), Box<dyn std::error::Error>> {
+    use objc2_app_kit::{
+        NSGlassEffectContainerView, NSGlassEffectView, NSGlassEffectViewStyle, NSView,
+    };
+    use objc2_foundation::{NSPoint, NSRect, NSSize};
+
+    let mtm = objc2::MainThreadMarker::new().ok_or("island sync must run on the main thread")?;
+    let ns_view = window.ns_view()? as *mut NSView;
+    unsafe {
+        let view = &*ns_view;
+        let Some(container) = view
+            .subviews()
+            .into_iter()
+            .find_map(|sub| sub.downcast::<NSGlassEffectContainerView>().ok())
+        else {
+            return Ok(()); // pre-macOS-26: the vibrancy sheet owns the window
+        };
+        let Some(content) = container.contentView() else {
+            return Ok(());
+        };
+
+        for existing in content.subviews() {
+            existing.removeFromSuperview();
+        }
+        // AppKit frames are bottom-left origin; rects arrive top-left.
+        let height = content.bounds().size.height;
+        for island in islands {
+            let frame = NSRect::new(
+                NSPoint::new(island.x, height - island.y - island.height),
+                NSSize::new(island.width, island.height),
+            );
+            let glass = NSGlassEffectView::initWithFrame(mtm.alloc(), frame);
+            glass.setStyle(NSGlassEffectViewStyle::Regular);
+            glass.setCornerRadius(island.radius);
+            content.addSubview(&glass);
+        }
+    }
+    Ok(())
+}
 
 fn tray_template_icon() -> tauri::Result<tauri::image::Image<'static>> {
     tauri::image::Image::from_bytes(include_bytes!("../icons/tray-template.png"))
@@ -65,15 +167,7 @@ pub fn run() {
 
             let window = app.get_webview_window("main").unwrap();
 
-            // Glass blur behind the webview. Active state is required: a
-            // non-activating panel is never key, and FollowsWindowActiveState
-            // would render the material permanently dim.
-            apply_vibrancy(
-                &window,
-                NSVisualEffectMaterial::HudWindow,
-                Some(NSVisualEffectState::Active),
-                Some(HUD_CORNER_RADIUS),
-            )?;
+            apply_hud_glass(&window)?;
 
             // Non-activating floating panel: hovers over every window and
             // fullscreen Space without ever stealing keyboard focus.
@@ -126,6 +220,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            set_glass_islands,
             poll::get_snapshots,
             activity::get_activity,
             progress::get_progress,

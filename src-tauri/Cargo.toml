@@ -22,6 +22,15 @@ tokio = { version = "1", features = ["time"] }
 tauri-plugin-window-state = "2"
 tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", rev = "a3122e894383aa068ec5365a42994e3ac94ba1b6" }
 window-vibrancy = "0.6"
+objc2 = "0.6"
+objc2-foundation = "0.3"
+objc2-app-kit = { version = "0.3", features = [
+    "NSGlassEffectView",
+    "NSGraphics",
+    "NSResponder",
+    "NSView",
+    "objc2-core-foundation",
+] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

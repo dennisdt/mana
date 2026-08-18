@@ -9,10 +9,10 @@ Mana lives in the menu bar and keeps its expanded party roster available at a gl
 ## Features
 
 - Menu-bar usage readout: remaining weekly percent per provider, plus the Claude model limit (e.g. `✳ 61·12 ⎔ 54`)
+- Native macOS Liquid Glass panel on macOS 26+, with a vibrancy-blur fallback on older systems
 - Claude Code session, weekly, and model-specific limits
 - Codex weekly subscription usage
-- Generated pixel-art outer frames for every rank
-- Prestige I-X frames with the highest-earned prestige crest
+- Prestige I-X progression with the highest-earned prestige crest
 - Rank-scaled fire/poison and ice/lightning familiar auras
 - Update-safe local levels, ranks, prestige, and XP progression
 - Local CLI activity indicators
@@ -23,7 +23,7 @@ Mana lives in the menu bar and keeps its expanded party roster available at a gl
 
 ## Requirements
 
-- macOS
+- macOS (macOS 26 Tahoe or newer for the Liquid Glass panel; older versions get a blur fallback)
 - Apple Silicon for the downloadable v0.4.5 binary
 - An authenticated Claude Code and/or Codex CLI session
 

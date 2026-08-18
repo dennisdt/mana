@@ -18,6 +18,7 @@
         "width": 488,
         "height": 175,
         "transparent": true,
+        "theme": "Dark",
         "decorations": false,
         "shadow": false,
         "visible": false,

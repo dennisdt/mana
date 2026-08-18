@@ -1,10 +1,7 @@
 import { resolveAura, type AuraDescriptor, type Provider } from "./aura-assets";
 import { auraFrameAt, auraFrameDelayAt } from "./aura-animation";
 import { rankSheetUrl } from "./cosmetics";
-import {
-  createFrameDecorationUpdater,
-  frameLayerHtml,
-} from "./frame-renderer";
+import { createPrestigeCrestUpdater } from "./frame-renderer";
 import { manaLeft, planLabel } from "./format";
 import { RANK_TIERS, type RankTier } from "./frame-assets";
 import {
@@ -303,12 +300,10 @@ function animatePreview(
 
 export async function mountPreview(options: PreviewOptions): Promise<void> {
   const root = document.getElementById("root");
-  const perimeter = document.getElementById("perimeter");
-  if (!root || !perimeter) return;
+  if (!root) return;
 
   root.dataset.rank = options.rank;
   root.dataset.previewReduced = String(options.reducedMotion);
-  perimeter.innerHTML = frameLayerHtml();
 
   const activeProviders = visibleProviders(options);
   const descriptors = new Map<Provider, AuraDescriptor | null>();
@@ -342,8 +337,8 @@ export async function mountPreview(options: PreviewOptions): Promise<void> {
   const xpbar = document.querySelector<HTMLElement>("#progress .xpbar");
   if (xpbar) xpbar.dataset.tooltipOpen = String(options.hovering);
 
-  const updateFrame = createFrameDecorationUpdater(perimeter);
-  await updateFrame(options.rank, options.prestige);
+  const updateCrest = createPrestigeCrestUpdater(root);
+  await updateCrest(options.rank, options.prestige);
   animatePreview(options, descriptors);
   sizePreview(root);
   document.body.dataset.previewReady = "true";
